@@ -26,10 +26,10 @@ jobs:
         run: yarn install --immutable
 
       - name: Generate types
-        run: yarn codegen
+        run: yarn codegen -f pezkuwi.yaml
 
       - name: Build
-        run: yarn build
+        run: yarn build -f pezkuwi.yaml
 
       - name: Validate Pezkuwi Relay
         run: ./node_modules/.bin/subql validate -f pezkuwi.yaml
