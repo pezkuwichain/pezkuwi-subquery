@@ -1,6 +1,7 @@
 {
   "name": "subquery-pezkuwi",
   "version": "1.0.0",
+  "packageManager": "yarn@4.12.0",
   "description": "Pezkuwi SubQuery - Staking rewards, NominationPools, transfers indexer for PezWallet",
   "main": "dist/index.js",
   "scripts": {
