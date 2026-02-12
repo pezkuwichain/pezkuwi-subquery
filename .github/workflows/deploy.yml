@@ -1,0 +1,72 @@
+name: Deploy to SubQuery Network
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - pezkuwi
+          - pezkuwi-assethub
+
+env:
+  SUBQL_ACCESS_TOKEN: ${{ secrets.SUBQL_ACCESS_TOKEN }}
+
+jobs:
+  deploy-pezkuwi:
+    if: ${{ github.event_name == 'release' || github.event.inputs.project == 'all' || github.event.inputs.project == 'pezkuwi' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Generate types
+        run: yarn codegen
+
+      - name: Build
+        run: yarn build
+
+      - name: Publish Pezkuwi Relay
+        run: ./node_modules/.bin/subql publish -f pezkuwi.yaml
+
+  deploy-assethub:
+    if: ${{ github.event_name == 'release' || github.event.inputs.project == 'all' || github.event.inputs.project == 'pezkuwi-assethub' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Generate types
+        run: yarn codegen
+
+      - name: Build
+        run: yarn build
+
+      - name: Publish Pezkuwi Asset Hub
+        run: ./node_modules/.bin/subql publish -f pezkuwi-assethub.yaml
