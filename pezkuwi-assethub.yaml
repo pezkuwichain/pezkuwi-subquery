@@ -1,0 +1,60 @@
+specVersion: 1.0.0
+name: subquery-pezkuwi-assethub
+version: 1.0.0
+runner:
+  node:
+    name: "@subql/node"
+    version: ">=4.6.6"
+  query:
+    name: "@subql/query"
+    version: "*"
+description: Pezkuwi Asset Hub SubQuery - Indexes NominationPools, transfers, swaps
+repository: https://github.com/pezkuwichain/pezkuwi-subquery
+schema:
+  file: ./schema.graphql
+network:
+  chainId: "0x00d0e1d0581c3cd5c5768652d52f4520184018b44f56a2ae1e0dc9d65c00c948"
+  endpoint:
+    - wss://asset-hub-rpc.pezkuwichain.io
+dataSources:
+  - name: main
+    kind: substrate/Runtime
+    startBlock: 1
+    mapping:
+      file: ./dist/index.js
+      handlers:
+        # Signed extrinsics for history
+        - handler: handleHistoryElement
+          kind: substrate/CallHandler
+          filter:
+            isSigned: true
+        # Nomination Pools rewards
+        - handler: handlePoolReward
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: PaidOut
+        # Pool bonded slash
+        - handler: handlePoolBondedSlash
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: PoolSlashed
+        # Pool unbonding slash
+        - handler: handlePoolUnbondingSlash
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: UnbondingPoolSlashed
+        # Native transfers
+        - handler: handleTransfer
+          kind: substrate/EventHandler
+          filter:
+            module: balances
+            method: Transfer
+        # Asset transfers
+        - handler: handleAssetTransfer
+          kind: substrate/EventHandler
+          filter:
+            module: assets
+            method: Transferred

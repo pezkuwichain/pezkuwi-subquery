@@ -1,0 +1,125 @@
+type Transfer @jsonField {
+  amount: String!
+  to: String!
+  from: String!
+  fee: String!
+  eventIdx: Int!
+  success: Boolean!
+}
+
+type AssetTransfer @jsonField {
+  assetId: String!
+  amount: String!
+  to: String!
+  from: String!
+  fee: String!
+  eventIdx: Int!
+  success: Boolean!
+}
+
+type Reward @jsonField {
+  eventIdx: Int!
+  amount: String!
+  isReward: Boolean!
+  era: Int
+  stash: String
+  validator: String
+}
+
+type PoolReward @jsonField {
+  eventIdx: Int!
+  amount: String!
+  isReward: Boolean!
+  poolId: Int!
+}
+
+type Swap @jsonField {
+  assetIdIn: String!
+  amountIn: String!
+  assetIdOut: String!
+  amountOut: String!
+  sender: String!
+  receiver: String!
+  assetIdFee: String!
+  fee: String!
+  eventIdx: Int!
+  success: Boolean!
+}
+
+enum RewardType {
+  reward
+  slash
+}
+
+type AccountReward @entity {
+  id: ID!
+  address: String! @index
+  blockNumber: Int! @index
+  timestamp: BigInt!
+  amount: BigInt!
+  accumulatedAmount: BigInt!
+  type: RewardType!
+}
+
+type AccountPoolReward @entity {
+  id: ID!
+  address: String! @index
+  blockNumber: Int! @index
+  timestamp: BigInt!
+  amount: BigInt!
+  accumulatedAmount: BigInt!
+  type: RewardType!
+  poolId: Int!
+}
+
+type AccumulatedReward @entity {
+  id: ID! #address
+  amount: BigInt!
+}
+
+type AccumulatedPoolReward @entity {
+  id: ID! #address
+  amount: BigInt!
+}
+
+type Extrinsic @jsonField {
+  hash: String!
+  module: String!
+  call: String!
+  fee: String!
+  success: Boolean!
+}
+
+type HistoryElement @entity {
+  id: ID!
+  blockNumber: Int!
+  extrinsicIdx: Int
+  extrinsicHash: String
+  timestamp: BigInt! @index
+  address: String! @index
+  reward: Reward
+  poolReward: PoolReward
+  extrinsic: Extrinsic
+  transfer: Transfer
+  assetTransfer: AssetTransfer
+  swap: Swap
+}
+
+type EraValidatorInfo @entity {
+  id: ID!
+  address: String! @index
+  era: Int! @index
+  total: BigInt!
+  own: BigInt!
+  others: [IndividualExposure]!
+}
+
+type IndividualExposure @jsonField {
+  who: String!
+  value: String!
+}
+
+type ErrorEvent @entity {
+  id: ID!
+  description: String!
+}

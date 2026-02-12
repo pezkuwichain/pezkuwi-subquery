@@ -1,0 +1,91 @@
+specVersion: 1.0.0
+name: subquery-pezkuwi-staking
+version: 1.0.0
+runner:
+  node:
+    name: "@subql/node"
+    version: ">=4.6.6"
+  query:
+    name: "@subql/query"
+    version: "*"
+description: Pezkuwi Staking SubQuery - Indexes staking rewards, slashes, era data for PezWallet
+repository: https://github.com/pezkuwichain/pezkuwi-subquery
+schema:
+  file: ./schema.graphql
+network:
+  chainId: "0xbb4a61ab0c4b8c12f5eab71d0c86c482e03a275ecdafee678dea712474d33d75"
+  endpoint:
+    - wss://rpc.pezkuwichain.io
+    - wss://mainnet.pezkuwichain.io
+dataSources:
+  - name: main
+    kind: substrate/Runtime
+    startBlock: 1
+    mapping:
+      file: ./dist/index.js
+      handlers:
+        # Signed extrinsics for history
+        - handler: handleHistoryElement
+          kind: substrate/CallHandler
+          filter:
+            isSigned: true
+        # Staking rewards (old format)
+        - handler: handleReward
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Reward
+        # Staking rewards (new format - Polkadot 2.0)
+        - handler: handleRewarded
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Rewarded
+        # Nomination Pools rewards
+        - handler: handlePoolReward
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: PaidOut
+        # Slashing (old format)
+        - handler: handleSlash
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Slash
+        # Slashing (new format)
+        - handler: handleSlashed
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Slashed
+        # Pool bonded slash
+        - handler: handlePoolBondedSlash
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: PoolSlashed
+        # Pool unbonding slash
+        - handler: handlePoolUnbondingSlash
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: UnbondingPoolSlashed
+        # Transfers
+        - handler: handleTransfer
+          kind: substrate/EventHandler
+          filter:
+            module: balances
+            method: Transfer
+        # Era changes (old format)
+        - handler: handleNewEra
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: StakingElection
+        # Era changes (new format - Polkadot 2.0)
+        - handler: handleStakersElected
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: StakersElected
