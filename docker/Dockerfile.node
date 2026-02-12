@@ -18,6 +18,12 @@ RUN npm init -y && \
     @polkadot/util@npm:@pezkuwi/util@^14.0.25 \
     @polkadot/util-crypto@npm:@pezkuwi/util-crypto@^14.0.25 \
     @polkadot/keyring@npm:@pezkuwi/keyring@^14.0.25 \
-    @polkadot/networks@npm:@pezkuwi/networks@^14.0.25
+    @polkadot/networks@npm:@pezkuwi/networks@^14.0.25 \
+    @polkadot/wasm-crypto@npm:@pezkuwi/wasm-crypto@^8.1.16 \
+    @polkadot/wasm-crypto-wasm@npm:@pezkuwi/wasm-crypto-wasm@^8.1.16 \
+    @polkadot/wasm-util@npm:@pezkuwi/wasm-util@^8.1.16 \
+    @polkadot/wasm-bridge@npm:@pezkuwi/wasm-bridge@^8.1.16 \
+    @polkadot/wasm-crypto-asmjs@npm:@pezkuwi/wasm-crypto-asmjs@^8.1.16 \
+    @polkadot/wasm-crypto-init@npm:@pezkuwi/wasm-crypto-init@^8.1.16
 
 ENTRYPOINT ["/app/node_modules/.bin/subql-node"]
