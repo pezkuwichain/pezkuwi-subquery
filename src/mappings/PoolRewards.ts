@@ -12,25 +12,15 @@ import {
   eventIdWithAddress,
   blockNumber,
 } from "./common";
-import { Codec } from "@polkadot/types/types";
-import { u32 } from "@polkadot/types-codec";
-import { INumber } from "@polkadot/types-codec/types/interfaces";
-import {
-  PalletNominationPoolsBondedPoolInner,
-  PalletNominationPoolsPoolMember,
-  PalletNominationPoolsSubPools,
-} from "@polkadot/types/lookup";
 import {
   handleGenericForTxHistory,
   updateAccumulatedGenericReward,
 } from "./Rewards";
 import { getPoolMembers } from "./Cache";
-import { Option } from "@polkadot/types";
+import { Option } from "@pezkuwi/types";
 
 export async function handlePoolReward(
-  rewardEvent: SubstrateEvent<
-    [accountId: Codec, poolId: INumber, reward: INumber]
-  >,
+  rewardEvent: SubstrateEvent,
 ): Promise<void> {
   await handlePoolRewardForTxHistory(rewardEvent);
   let accumulatedReward = await updateAccumulatedPoolReward(rewardEvent, true);
@@ -42,17 +32,15 @@ export async function handlePoolReward(
   await updateAccountPoolRewards(
     rewardEvent,
     accountId.toString(),
-    amount.toBigInt(),
-    poolId.toNumber(),
+    (amount as any).toBigInt(),
+    (poolId as any).toNumber(),
     RewardType.reward,
     accumulatedReward.amount,
   );
 }
 
 async function handlePoolRewardForTxHistory(
-  rewardEvent: SubstrateEvent<
-    [accountId: Codec, poolId: INumber, reward: INumber]
-  >,
+  rewardEvent: SubstrateEvent,
 ): Promise<void> {
   const {
     event: {
@@ -67,7 +55,7 @@ async function handlePoolRewardForTxHistory(
         eventIdx: rewardEvent.idx,
         amount: amount.toString(),
         isReward: true,
-        poolId: poolId.toNumber(),
+        poolId: (poolId as any).toNumber(),
       };
       return element;
     },
@@ -75,7 +63,7 @@ async function handlePoolRewardForTxHistory(
 }
 
 async function updateAccumulatedPoolReward(
-  event: SubstrateEvent<[accountId: Codec, poolId: INumber, reward: INumber]>,
+  event: SubstrateEvent,
   isReward: boolean,
 ): Promise<AccumulatedReward> {
   let {
@@ -86,7 +74,7 @@ async function updateAccumulatedPoolReward(
   return await updateAccumulatedGenericReward(
     AccumulatedPoolReward,
     accountId.toString(),
-    amount.toBigInt(),
+    (amount as any).toBigInt(),
     isReward,
   );
 }
@@ -114,62 +102,60 @@ async function updateAccountPoolRewards(
 }
 
 export async function handlePoolBondedSlash(
-  bondedSlashEvent: SubstrateEvent<[poolId: INumber, slash: INumber]>,
+  bondedSlashEvent: SubstrateEvent,
 ): Promise<void> {
   const {
     event: {
       data: [poolIdEncoded, slash],
     },
   } = bondedSlashEvent;
-  const poolId = poolIdEncoded.toNumber();
+  const poolId = (poolIdEncoded as any).toNumber();
 
   const poolOption = (await api.query.nominationPools.bondedPools(
     poolId,
-  )) as Option<PalletNominationPoolsBondedPoolInner>;
+  )) as Option<any>;
   const pool = poolOption.unwrap();
 
   await handleRelaychainPooledStakingSlash(
     bondedSlashEvent,
     poolId,
     pool.points.toBigInt(),
-    slash.toBigInt(),
-    (member: PalletNominationPoolsPoolMember): bigint => {
+    (slash as any).toBigInt(),
+    (member: any): bigint => {
       return member.points.toBigInt();
     },
   );
 }
 
 export async function handlePoolUnbondingSlash(
-  unbondingSlashEvent: SubstrateEvent<
-    [poolId: INumber, era: INumber, slash: INumber]
-  >,
+  unbondingSlashEvent: SubstrateEvent,
 ): Promise<void> {
   const {
     event: {
       data: [poolId, era, slash],
     },
   } = unbondingSlashEvent;
-  const poolIdNumber = poolId.toNumber();
-  const eraIdNumber = era.toNumber();
+  const poolIdNumber = (poolId as any).toNumber();
+  const eraIdNumber = (era as any).toNumber();
 
   const unbondingPools = (
     (await api.query.nominationPools.subPoolsStorage(
       poolIdNumber,
-    )) as Option<PalletNominationPoolsSubPools>
+    )) as Option<any>
   ).unwrap();
 
   const pool =
-    unbondingPools.withEra.get(eraIdNumber as unknown as u32) ??
+    (unbondingPools.withEra as any).get(eraIdNumber) ??
     unbondingPools.noEra;
 
   await handleRelaychainPooledStakingSlash(
     unbondingSlashEvent,
     poolIdNumber,
     pool.points.toBigInt(),
-    slash.toBigInt(),
-    (member: PalletNominationPoolsPoolMember): bigint => {
+    (slash as any).toBigInt(),
+    (member: any): bigint => {
       return (
-        member.unbondingEras.get(eraIdNumber as unknown as u32)?.toBigInt() ??
+        ((member.unbondingEras as any).get(eraIdNumber))?.toBigInt() ??
         BigInt(0)
       );
     },
@@ -181,7 +167,7 @@ async function handleRelaychainPooledStakingSlash(
   poolId: number,
   poolPoints: bigint,
   slash: bigint,
-  memberPointsCounter: (member: PalletNominationPoolsPoolMember) => bigint,
+  memberPointsCounter: (member: any) => bigint,
 ): Promise<void> {
   if (poolPoints == BigInt(0)) {
     return;
@@ -229,16 +215,16 @@ async function handlePoolSlashForTxHistory(
 ): Promise<void> {
   const extrinsic = slashEvent.extrinsic;
   const block = slashEvent.block;
-  const blockNumber = block.block.header.number.toString();
+  const blockNum = block.block.header.number.toString();
   const blockTimestamp = timestamp(block);
-  const eventId = eventIdFromBlockAndIdxAndAddress(
-    blockNumber,
+  const evtId = eventIdFromBlockAndIdxAndAddress(
+    blockNum,
     slashEvent.idx.toString(),
     accountId,
   );
 
   const element = HistoryElement.create({
-    id: eventId,
+    id: evtId,
     timestamp: blockTimestamp,
     blockNumber: block.block.header.number.toNumber(),
     extrinsicHash:

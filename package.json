@@ -19,15 +19,17 @@
   "author": "Pezkuwi Team",
   "license": "Apache-2.0",
   "dependencies": {
-    "lodash": "^4.17.21",
-    "@polkadot/api": "npm:@pezkuwi/api@^16.5.34",
-    "@polkadot/api-derive": "npm:@pezkuwi/api-derive@^16.5.34",
-    "@polkadot/types": "npm:@pezkuwi/types@^16.5.34",
-    "@polkadot/types-augment": "npm:@pezkuwi/types-augment@^16.5.34",
-    "@polkadot/types-codec": "npm:@pezkuwi/types-codec@^16.5.34",
-    "@polkadot/util": "npm:@pezkuwi/util@^14.0.23",
-    "@polkadot/util-crypto": "npm:@pezkuwi/util-crypto@^14.0.23",
-    "@polkadot/keyring": "npm:@pezkuwi/keyring@^14.0.23"
+    "@pezkuwi/api": "^16.5.36",
+    "@pezkuwi/api-augment": "^16.5.36",
+    "@pezkuwi/api-derive": "^16.5.36",
+    "@pezkuwi/keyring": "^14.0.25",
+    "@pezkuwi/types": "^16.5.36",
+    "@pezkuwi/types-augment": "^16.5.36",
+    "@pezkuwi/types-codec": "^16.5.36",
+    "@pezkuwi/types-create": "^16.5.36",
+    "@pezkuwi/util": "^14.0.25",
+    "@pezkuwi/util-crypto": "^14.0.25",
+    "lodash": "^4.17.21"
   },
   "devDependencies": {
     "@subql/cli": "latest",

@@ -21,64 +21,50 @@ import {
   callFromProxy,
   blockNumber,
 } from "./common";
-import { CallBase } from "@polkadot/types/types/calls";
-import { AnyTuple } from "@polkadot/types/types/codec";
-import { EraIndex } from "@polkadot/types/interfaces/staking";
-import { Balance, EventRecord } from "@polkadot/types/interfaces";
 import {
   cachedRewardDestination,
   cachedController,
   cachedStakingRewardEraIndex,
 } from "./Cache";
-import { Codec } from "@polkadot/types/types";
-import { INumber } from "@polkadot/types-codec/types/interfaces";
 
-function isPayoutStakers(call: CallBase<AnyTuple>): boolean {
+function isPayoutStakers(call: any): boolean {
   return call.method == "payoutStakers";
 }
 
-function isPayoutStakersByPage(call: CallBase<AnyTuple>): boolean {
+function isPayoutStakersByPage(call: any): boolean {
   return call.method == "payoutStakersByPage";
 }
 
-function isPayoutValidator(call: CallBase<AnyTuple>): boolean {
+function isPayoutValidator(call: any): boolean {
   return call.method == "payoutValidator";
 }
 
-function extractArgsFromPayoutStakers(
-  call: CallBase<AnyTuple>,
-): [string, number] {
+function extractArgsFromPayoutStakers(call: any): [string, number] {
   const [validatorAddressRaw, eraRaw] = call.args;
 
-  return [validatorAddressRaw.toString(), (eraRaw as EraIndex).toNumber()];
+  return [validatorAddressRaw.toString(), (eraRaw as any).toNumber()];
 }
 
-function extractArgsFromPayoutStakersByPage(
-  call: CallBase<AnyTuple>,
-): [string, number] {
+function extractArgsFromPayoutStakersByPage(call: any): [string, number] {
   const [validatorAddressRaw, eraRaw, _] = call.args;
 
-  return [validatorAddressRaw.toString(), (eraRaw as EraIndex).toNumber()];
+  return [validatorAddressRaw.toString(), (eraRaw as any).toNumber()];
 }
 
 function extractArgsFromPayoutValidator(
-  call: CallBase<AnyTuple>,
+  call: any,
   sender: string,
 ): [string, number] {
   const [eraRaw] = call.args;
 
-  return [sender, (eraRaw as EraIndex).toNumber()];
+  return [sender, (eraRaw as any).toNumber()];
 }
 
-export async function handleRewarded(
-  rewardEvent: SubstrateEvent<[accountId: Codec, reward: INumber]>,
-): Promise<void> {
+export async function handleRewarded(rewardEvent: SubstrateEvent): Promise<void> {
   await handleReward(rewardEvent);
 }
 
-export async function handleReward(
-  rewardEvent: SubstrateEvent<[accountId: Codec, reward: INumber]>,
-): Promise<void> {
+export async function handleReward(rewardEvent: SubstrateEvent): Promise<void> {
   await handleRewardForTxHistory(rewardEvent);
   let accumulatedReward = await updateAccumulatedReward(rewardEvent, true);
   await updateAccountRewards(
@@ -86,22 +72,6 @@ export async function handleReward(
     RewardType.reward,
     accumulatedReward.amount,
   );
-  // let rewardEventId = eventId(rewardEvent)
-  // try {
-  //     let errorOccursOnEvent = await ErrorEvent.get(rewardEventId)
-  //     if (errorOccursOnEvent !== undefined) {
-  //         logger.info(`Skip rewardEvent: ${rewardEventId}`)
-  //         return;
-  //     }
-
-  //     await handleRewardForTxHistory(rewardEvent)
-  //     await updateAccumulatedReward(rewardEvent, true)
-  // } catch (error) {
-  //     logger.error(`Got error on reward event: ${rewardEventId}: ${error.toString()}`)
-  //     let saveError = new ErrorEvent(rewardEventId)
-  //     saveError.description = error.toString()
-  //     await saveError.save()
-  // }
 }
 
 async function handleRewardForTxHistory(
@@ -209,7 +179,7 @@ async function handleRewardForTxHistory(
 }
 
 function determinePayoutCallsArgs(
-  causeCall: CallBase<AnyTuple>,
+  causeCall: any,
   sender: string,
 ): [string, number][] {
   if (isPayoutStakers(causeCall)) {
@@ -220,7 +190,7 @@ function determinePayoutCallsArgs(
     return [extractArgsFromPayoutValidator(causeCall, sender)];
   } else if (isBatch(causeCall)) {
     return callsFromBatch(causeCall)
-      .map((call) => {
+      .map((call: any) => {
         return determinePayoutCallsArgs(call, sender).map(
           (value, index, array) => {
             return value;
@@ -236,15 +206,11 @@ function determinePayoutCallsArgs(
   }
 }
 
-export async function handleSlashed(
-  slashEvent: SubstrateEvent<[accountId: Codec, slash: INumber]>,
-): Promise<void> {
+export async function handleSlashed(slashEvent: SubstrateEvent): Promise<void> {
   await handleSlash(slashEvent);
 }
 
-export async function handleSlash(
-  slashEvent: SubstrateEvent<[accountId: Codec, slash: INumber]>,
-): Promise<void> {
+export async function handleSlash(slashEvent: SubstrateEvent): Promise<void> {
   await handleSlashForTxHistory(slashEvent);
   let accumulatedReward = await updateAccumulatedReward(slashEvent, false);
   await updateAccountRewards(
@@ -252,29 +218,13 @@ export async function handleSlash(
     RewardType.slash,
     accumulatedReward.amount,
   );
-  // let slashEventId = eventId(slashEvent)
-  // try {
-  //     let errorOccursOnEvent = await ErrorEvent.get(slashEventId)
-  //     if (errorOccursOnEvent !== undefined) {
-  //         logger.info(`Skip slashEvent: ${slashEventId}`)
-  //         return;
-  //     }
-
-  //     await handleSlashForTxHistory(slashEvent)
-  //     await updateAccumulatedReward(slashEvent, false)
-  // } catch (error) {
-  //     logger.error(`Got error on slash event: ${slashEventId}: ${error.toString()}`)
-  //     let saveError = new ErrorEvent(slashEventId)
-  //     saveError.description = error.toString()
-  //     await saveError.save()
-  // }
 }
 
 async function getValidators(era: number): Promise<Set<string>> {
   const eraStakersInSlashEra = await (api.query.staking.erasStakersClipped
     ? api.query.staking.erasStakersClipped.keys(era)
     : api.query.staking.erasStakersOverview.keys(era));
-  const validatorsInSlashEra = eraStakersInSlashEra.map((key) => {
+  const validatorsInSlashEra = eraStakersInSlashEra.map((key: any) => {
     let [, validatorId] = key.args;
 
     return validatorId.toString();
@@ -347,7 +297,7 @@ async function buildRewardEvents<A>(
     amount: string,
   ) => Reward,
 ) {
-  let blockNumber = block.block.header.number.toString();
+  let blockNum = block.block.header.number.toString();
   let blockTimestamp = timestamp(block);
 
   let innerAccumulator = initialInnerAccumulator;
@@ -371,13 +321,13 @@ async function buildRewardEvents<A>(
       account.toString(),
     );
 
-    const eventId = eventIdFromBlockAndIdx(blockNumber, eventIndex.toString());
+    const evtId = eventIdFromBlockAndIdx(blockNum, eventIndex.toString());
 
     const accountAddress = account.toString();
     const destinationAddress = accountsMapping[accountAddress];
 
     const element = new HistoryElement(
-      eventId,
+      evtId,
       block.block.header.number.toNumber(),
       blockTimestamp,
       destinationAddress !== undefined ? destinationAddress : accountAddress,
@@ -407,7 +357,7 @@ async function updateAccumulatedReward(
   return await updateAccumulatedGenericReward(
     AccumulatedReward,
     accountId.toString(),
-    (amount as unknown as Balance).toBigInt(),
+    (amount as any).toBigInt(),
     isReward,
   );
 }
@@ -425,7 +375,7 @@ async function updateAccountRewards(
     accountAddress,
     blockNumber(event),
     timestamp(event.block),
-    (amount as unknown as Balance).toBigInt(),
+    (amount as any).toBigInt(),
     accumulatedAmount,
     rewardType,
   );
@@ -463,7 +413,7 @@ async function handleParachainRewardForTxHistory(
 }
 
 export async function handleParachainRewarded(
-  rewardEvent: SubstrateEvent<[accountId: Codec, reward: INumber]>,
+  rewardEvent: SubstrateEvent,
 ): Promise<void> {
   await handleParachainRewardForTxHistory(rewardEvent);
   let accumulatedReward = await updateAccumulatedReward(rewardEvent, true);
@@ -471,46 +421,6 @@ export async function handleParachainRewarded(
     rewardEvent,
     RewardType.reward,
     accumulatedReward.amount,
-  );
-}
-
-// ============= Mythos ================
-
-export async function handleMythosRewarded(
-  rewardEvent: SubstrateEvent<[accountId: Codec, reward: INumber]>,
-): Promise<void> {
-  await handleMythosRewardForTxHistory(rewardEvent);
-  let accumulatedReward = await updateAccumulatedReward(rewardEvent, true);
-  await updateAccountRewards(
-    rewardEvent,
-    RewardType.reward,
-    accumulatedReward.amount,
-  );
-}
-
-async function handleMythosRewardForTxHistory(
-  rewardEvent: SubstrateEvent,
-): Promise<void> {
-  let [account, amount] = decodeDataFromReward(rewardEvent);
-
-  await handleGenericForTxHistory(
-    rewardEvent,
-    account.toString(),
-    async (element: HistoryElement) => {
-      element.reward = {
-        eventIdx: rewardEvent.idx,
-        amount: amount.toString(),
-        isReward: true,
-        stash: account.toString(),
-        // Mythos staking rewards are paid manually by the user so each reward
-        // aggregates multiple payouts, and it is hard to split it into
-        // individual per-session per-validator pieces
-        validator: null,
-        era: null,
-      };
-
-      return element;
-    },
   );
 }
 
@@ -558,12 +468,12 @@ export async function handleGenericForTxHistory(
 ): Promise<void> {
   const extrinsic = event.extrinsic;
   const block = event.block;
-  const blockNumber = block.block.header.number.toString();
+  const blockNum = block.block.header.number.toString();
   const blockTimestamp = timestamp(block);
-  const eventId = eventIdFromBlockAndIdx(blockNumber, event.idx.toString());
+  const evtId = eventIdFromBlockAndIdx(blockNum, event.idx.toString());
 
   const element = new HistoryElement(
-    eventId,
+    evtId,
     block.block.header.number.toNumber(),
     blockTimestamp,
     address,
@@ -593,20 +503,15 @@ interface AccountRewardsInterface {
   save(): Promise<void>;
 }
 
-export function eventRecordToSubstrateEvent(
-  eventRecord: EventRecord,
-): SubstrateEvent {
+export function eventRecordToSubstrateEvent(eventRecord: any): SubstrateEvent {
   return eventRecord as unknown as SubstrateEvent;
 }
 
-function decodeDataFromReward(event: SubstrateEvent): [Codec, Codec] {
-  // In early version staking.Reward data only have 2 parameters [accountId, amount]
-  // Now rewarded changed to https://polkadot.js.org/docs/substrate/events/#rewardedaccountid32-palletstakingrewarddestination-u128
-  // And we can direct access property from data
+function decodeDataFromReward(event: SubstrateEvent): [any, any] {
   const {
     event: { data: innerData },
   } = event;
-  let account: Codec, amount: Codec;
+  let account: any, amount: any;
   if (innerData.length == 2) {
     [account, amount] = innerData;
   } else {

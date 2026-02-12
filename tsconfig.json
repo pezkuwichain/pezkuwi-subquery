@@ -7,12 +7,28 @@
     "importHelpers": true,
     "resolveJsonModule": true,
     "module": "commonjs",
+    "moduleResolution": "node",
     "outDir": "dist",
     "rootDir": ".",
     "target": "es2020",
     "skipLibCheck": true,
     "strictNullChecks": false,
-    "strict": true
+    "strict": true,
+    "paths": {
+      "@polkadot/types": ["./node_modules/@pezkuwi/types/cjs/index.d.ts"],
+      "@polkadot/types/*": ["./node_modules/@pezkuwi/types/cjs/*"],
+      "@polkadot/types-codec": ["./node_modules/@pezkuwi/types-codec/cjs/index.d.ts"],
+      "@polkadot/types-codec/*": ["./node_modules/@pezkuwi/types-codec/cjs/*"],
+      "@polkadot/api": ["./node_modules/@pezkuwi/api/cjs/index.d.ts"],
+      "@polkadot/api/*": ["./node_modules/@pezkuwi/api/cjs/*"],
+      "@pezkuwi/types": ["./node_modules/@pezkuwi/types/cjs/index.d.ts"],
+      "@pezkuwi/types/*": ["./node_modules/@pezkuwi/types/cjs/*"],
+      "@pezkuwi/types-codec": ["./node_modules/@pezkuwi/types-codec/cjs/index.d.ts"],
+      "@pezkuwi/types-codec/*": ["./node_modules/@pezkuwi/types-codec/cjs/*"],
+      "@pezkuwi/api": ["./node_modules/@pezkuwi/api/cjs/index.d.ts"],
+      "@pezkuwi/api/*": ["./node_modules/@pezkuwi/api/cjs/*"]
+    },
+    "baseUrl": "."
   },
   "include": [
     "src/**/*",

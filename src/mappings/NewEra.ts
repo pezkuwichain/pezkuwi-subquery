@@ -2,13 +2,8 @@ import { SubstrateEvent } from "@subql/types";
 import { eventId } from "./common";
 import { EraValidatorInfo } from "../types/models/EraValidatorInfo";
 import { IndividualExposure } from "../types";
-import {
-  SpStakingPagedExposureMetadata,
-  SpStakingExposurePage,
-} from "@polkadot/types/lookup";
-import { Option } from "@polkadot/types";
-import { INumber } from "@polkadot/types-codec/types/interfaces";
-import { Exposure } from "@polkadot/types/interfaces";
+import { Option } from "@pezkuwi/types";
+import { Exposure } from "@pezkuwi/types/interfaces/staking";
 
 export async function handleStakersElected(
   event: SubstrateEvent,
@@ -17,7 +12,7 @@ export async function handleStakersElected(
 }
 
 export async function handleNewEra(event: SubstrateEvent): Promise<void> {
-  const currentEra = ((await api.query.staking.currentEra()) as Option<INumber>)
+  const currentEra = ((await api.query.staking.currentEra()) as Option<any>)
     .unwrap()
     .toNumber();
 
@@ -65,19 +60,17 @@ async function processEraStakersPaged(
   const pages = await api.query.staking.erasStakersPaged.entries(currentEra);
 
   interface AccumulatorType {
-    [key: string]: any;
+    [key: string]: { [page: number]: IndividualExposure[] };
   }
 
   const othersCounted = pages.reduce(
     (accumulator: AccumulatorType, [key, exp]) => {
-      const exposure = (
-        exp as unknown as Option<SpStakingExposurePage>
-      ).unwrap();
+      const exposure = (exp as Option<any>).unwrap();
       const [, validatorId, pageId] = key.args;
-      const pageNumber = (pageId as INumber).toNumber();
+      const pageNumber = (pageId as any).toNumber();
       const validatorIdString = validatorId.toString();
 
-      const others = exposure.others.map(({ who, value }) => {
+      const others: IndividualExposure[] = exposure.others.map(({ who, value }: any) => {
         return {
           who: who.toString(),
           value: value.toString(),
@@ -93,13 +86,11 @@ async function processEraStakersPaged(
   );
 
   for (const [key, exp] of overview) {
-    const exposure = (
-      exp as unknown as Option<SpStakingPagedExposureMetadata>
-    ).unwrap();
+    const exposure = (exp as Option<any>).unwrap();
     const [, validatorId] = key.args;
     let validatorIdString = validatorId.toString();
 
-    let others = [];
+    let others: IndividualExposure[] = [];
     for (let i = 0; i < exposure.pageCount.toNumber(); ++i) {
       others.push(...othersCounted[validatorIdString][i]);
     }

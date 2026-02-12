@@ -1,127 +1,35 @@
-import { SubstrateBlock, SubstrateEvent, TypedEventRecord } from "@subql/types";
+import { SubstrateBlock, SubstrateEvent } from "@subql/types";
 import { SubstrateExtrinsic } from "@subql/types";
-import { Balance, EventRecord } from "@polkadot/types/interfaces";
-import { CallBase } from "@polkadot/types/types/calls";
-import { AnyTuple, Codec } from "@polkadot/types/types/codec";
-import { Vec, GenericEventData } from "@polkadot/types";
-import { INumber } from "@polkadot/types-codec/types/interfaces";
-import { u8aToHex } from "@polkadot/util";
 
 const batchCalls = ["batch", "batchAll", "forceBatch"];
 const transferCalls = ["transfer", "transferKeepAlive"];
-const ormlSections = ["currencies", "tokens"];
 
 export function distinct<T>(array: Array<T>): Array<T> {
   return [...new Set(array)];
 }
 
-export function isBatch(call: CallBase<AnyTuple>): boolean {
+export function isBatch(call: any): boolean {
   return call.section == "utility" && batchCalls.includes(call.method);
 }
 
-export function isProxy(call: CallBase<AnyTuple>): boolean {
+export function isProxy(call: any): boolean {
   return call.section == "proxy" && call.method == "proxy";
 }
 
-export function isNativeTransfer(call: CallBase<AnyTuple>): boolean {
-  return (
-    (call.section == "balances" && transferCalls.includes(call.method)) ||
-    (call.section == "currencies" && call.method == "transferNativeCurrency")
-  );
+export function isNativeTransfer(call: any): boolean {
+  return call.section == "balances" && transferCalls.includes(call.method);
 }
 
-export function isAssetTransfer(call: CallBase<AnyTuple>): boolean {
-  return call.section == "assets" && transferCalls.includes(call.method);
-}
-
-export function isEquilibriumTransfer(call: CallBase<AnyTuple>): boolean {
-  return call.section == "eqBalances" && transferCalls.includes(call.method);
-}
-
-export function isEvmTransaction(call: CallBase<AnyTuple>): boolean {
-  return call.section === "ethereum" && call.method === "transact";
-}
-
-export function isEvmExecutedEvent(event: TypedEventRecord<Codec[]>): boolean {
-  return (
-    event.event.section === "ethereum" && event.event.method === "Executed"
-  );
-}
-
-export function isAssetTxFeePaidEvent(event: SubstrateEvent): boolean {
-  return (
-    event.event.section === "assetTxPayment" &&
-    event.event.method === "AssetTxFeePaid"
-  );
-}
-
-export function isCurrencyDepositedEvent(event: SubstrateEvent): boolean {
-  return (
-    event.event.section === "currencies" && event.event.method === "Deposited"
-  );
-}
-
-export function isSwapExecutedEvent(event: SubstrateEvent): boolean {
-  return (
-    event.event.section === "assetConversion" &&
-    event.event.method === "SwapExecuted"
-  );
-}
-
-export function isSwapExactTokensForTokens(call: CallBase<AnyTuple>): boolean {
-  return (
-    call.section === "assetConversion" &&
-    call.method === "swapExactTokensForTokens"
-  );
-}
-
-export function isSwapTokensForExactTokens(call: CallBase<AnyTuple>): boolean {
-  return (
-    call.section === "assetConversion" &&
-    call.method === "swapTokensForExactTokens"
-  );
-}
-
-export function isHydraOmnipoolBuy(call: CallBase<AnyTuple>): boolean {
-  return call.section === "omnipool" && call.method == "buy";
-}
-
-export function isHydraOmnipoolSell(call: CallBase<AnyTuple>): boolean {
-  return call.section === "omnipool" && call.method == "sell";
-}
-
-export function isHydraRouterBuy(call: CallBase<AnyTuple>): boolean {
-  return call.section === "router" && call.method == "buy";
-}
-
-export function isHydraRouterSell(call: CallBase<AnyTuple>): boolean {
-  return call.section === "router" && call.method == "sell";
-}
-
-export function isOrmlTransfer(call: CallBase<AnyTuple>): boolean {
-  return (
-    ormlSections.includes(call.section) && transferCalls.includes(call.method)
-  );
-}
-
-export function isNativeTransferAll(call: CallBase<AnyTuple>): boolean {
+export function isNativeTransferAll(call: any): boolean {
   return call.section == "balances" && call.method === "transferAll";
 }
 
-export function isOrmlTransferAll(call: CallBase<AnyTuple>): boolean {
-  return ormlSections.includes(call.section) && call.method === "transferAll";
+export function callsFromBatch(batchCall: any): any[] {
+  return batchCall.args[0] as any[];
 }
 
-export function callsFromBatch(
-  batchCall: CallBase<AnyTuple>,
-): CallBase<AnyTuple>[] {
-  return batchCall.args[0] as Vec<CallBase<AnyTuple>>;
-}
-
-export function callFromProxy(
-  proxyCall: CallBase<AnyTuple>,
-): CallBase<AnyTuple> {
-  return proxyCall.args[2] as CallBase<AnyTuple>;
+export function callFromProxy(proxyCall: any): any {
+  return proxyCall.args[2];
 }
 
 export function eventIdWithAddress(
@@ -186,12 +94,6 @@ export function calculateFeeAsString(
     const withdrawFee = exportFeeFromBalancesWithdrawEvent(extrinsic, from);
 
     if (withdrawFee !== BigInt(0)) {
-      if (isEvmTransaction(extrinsic.extrinsic.method)) {
-        const feeRefund = exportFeeRefund(extrinsic, from);
-        return feeRefund
-          ? (withdrawFee - feeRefund).toString()
-          : withdrawFee.toString();
-      }
       return withdrawFee.toString();
     }
 
@@ -205,51 +107,29 @@ export function calculateFeeAsString(
   }
 }
 
-export function getEventData(event: SubstrateEvent): GenericEventData {
-  return event.event.data as GenericEventData;
+export function getEventData(event: SubstrateEvent): any {
+  return event.event.data;
 }
 
-export function eventRecordToSubstrateEvent(
-  eventRecord: EventRecord,
-): SubstrateEvent {
+export function eventRecordToSubstrateEvent(eventRecord: any): SubstrateEvent {
   return eventRecord as unknown as SubstrateEvent;
 }
 
-export function BigIntFromCodec(eventRecord: Codec): bigint {
-  return (eventRecord as unknown as INumber).toBigInt();
+export function BigIntFromCodec(codec: any): bigint {
+  return codec.toBigInt();
 }
 
-export function convertOrmlCurrencyIdToString(currencyId: Codec): string {
-  // make sure first we have scale encoded bytes
-  const bytes = currencyId.toU8a();
-
-  return u8aToHex(bytes).toString();
-}
-
-function exportFeeRefund(
-  extrinsic: SubstrateExtrinsic,
-  from: string = "",
-): bigint {
-  const extrinsicSigner = from || extrinsic.extrinsic.signer.toString();
-
-  const eventRecord = extrinsic.events.find(
-    (event) =>
-      event.event.method == "Deposit" &&
-      event.event.section == "balances" &&
-      event.event.data[0].toString() === extrinsicSigner,
-  );
-
-  if (eventRecord != undefined) {
-    const {
-      event: {
-        data: [, fee],
-      },
-    } = eventRecord;
-
-    return (fee as unknown as Balance).toBigInt();
+export function getRewardData(event: SubstrateEvent): [any, any] {
+  const {
+    event: { data: innerData },
+  } = event;
+  let account: any, amount: any;
+  if (innerData.length == 2) {
+    [account, amount] = innerData;
+  } else {
+    [account, , amount] = innerData;
   }
-
-  return BigInt(0);
+  return [account, amount];
 }
 
 function exportFeeFromBalancesWithdrawEvent(
@@ -271,7 +151,7 @@ function exportFeeFromBalancesWithdrawEvent(
     const extrinsicSigner = from || extrinsic.extrinsic.signer.toString();
     const withdrawAccountId = accountid.toString();
     return extrinsicSigner === withdrawAccountId
-      ? (fee as unknown as Balance).toBigInt()
+      ? (fee as any).toBigInt()
       : BigInt(0);
   }
 
@@ -295,7 +175,7 @@ function exportFeeFromTransactionFeePaidEvent(
       },
     } = eventRecord;
 
-    const fullFee = (fee as Balance).toBigInt() + (tip as Balance).toBigInt();
+    const fullFee = (fee as any).toBigInt() + (tip as any).toBigInt();
 
     const extrinsicSigner = from || extrinsic.extrinsic.signer.toString();
     const withdrawAccountId = accountid.toString();
@@ -319,7 +199,7 @@ function exportFeeFromBalancesDepositEvent(
       },
     } = eventRecord;
 
-    return (fee as unknown as Balance).toBigInt();
+    return (fee as any).toBigInt();
   }
 
   return BigInt(0);
@@ -339,53 +219,15 @@ function exportFeeFromTreasureDepositEvent(
       },
     } = eventRecord;
 
-    return (fee as unknown as Balance).toBigInt();
+    return (fee as any).toBigInt();
   } else {
     return BigInt(0);
   }
 }
 
-export function getAssetIdFromMultilocation(
-  multilocation: any,
-  safe = false,
-): string | undefined {
-  try {
-    let junctions = multilocation.interior;
-
-    if (junctions.isHere) {
-      return "native";
-    } else if (multilocation.parents != "0") {
-      return multilocation.toHex();
-    } else {
-      return junctions.asX2[1].asGeneralIndex.toString();
-    }
-  } catch (e) {
-    if (safe) {
-      return undefined;
-    } else {
-      throw e;
-    }
-  }
-}
-
-export function getRewardData(event: SubstrateEvent): [Codec, Codec] {
-  const {
-    event: { data: innerData },
-  } = event;
-  let account: Codec, amount: Codec;
-  if (innerData.length == 2) {
-    [account, amount] = innerData;
-  } else {
-    [account, , amount] = innerData;
-  }
-  return [account, amount];
-}
-
-export function extractTransactionPaidFee(
-  events: EventRecord[],
-): string | undefined {
+export function extractTransactionPaidFee(events: any[]): string | undefined {
   const eventRecord = events.find(
-    (event) =>
+    (event: any) =>
       event.event.method == "TransactionFeePaid" &&
       event.event.section == "transactionPayment",
   );
@@ -398,7 +240,7 @@ export function extractTransactionPaidFee(
     },
   } = eventRecord;
 
-  const fullFee = (fee as Balance).toBigInt() + (tip as Balance).toBigInt();
+  const fullFee = (fee as any).toBigInt() + (tip as any).toBigInt();
 
   return fullFee.toString();
 }

@@ -1,16 +1,11 @@
-import "@polkadot/types-augment/lookup";
 import { SubstrateEvent } from "@subql/types";
 import { blockNumber } from "./common";
-import { AccountId } from "@polkadot/types/interfaces";
-import {
-  PalletStakingRewardDestination,
-  PalletNominationPoolsPoolMember,
-} from "@polkadot/types/lookup";
-import { Option } from "@polkadot/types";
+import { Option } from "@pezkuwi/types";
+import { RewardDestination, AccountId } from "@pezkuwi/types/interfaces";
 
 // Due to memory consumption optimization `rewardDestinationByAddress` contains only one key
 let rewardDestinationByAddress: {
-  [blockId: string]: { [address: string]: PalletStakingRewardDestination };
+  [blockId: string]: { [address: string]: RewardDestination };
 } = {};
 let controllersByStash: { [blockId: string]: { [address: string]: string } } =
   {};
@@ -18,13 +13,13 @@ let controllersByStash: { [blockId: string]: { [address: string]: string } } =
 let parachainStakingRewardEra: { [blockId: string]: number } = {};
 
 let poolMembers: {
-  [blockId: number]: [string, PalletNominationPoolsPoolMember][];
+  [blockId: number]: [string, any][];
 } = {};
 
 export async function cachedRewardDestination(
   accountAddress: string,
   event: SubstrateEvent,
-): Promise<PalletStakingRewardDestination> {
+): Promise<RewardDestination> {
   const blockId = blockNumber(event);
   let cachedBlock = rewardDestinationByAddress[blockId];
 
@@ -43,7 +38,7 @@ export async function cachedRewardDestination(
     });
 
     let destinationByAddress: {
-      [address: string]: PalletStakingRewardDestination;
+      [address: string]: RewardDestination;
     } = {};
 
     let {
@@ -58,8 +53,7 @@ export async function cachedRewardDestination(
           },
         } = event;
         let accountAddress = accountId.toString();
-        destinationByAddress[accountAddress] =
-          destination as PalletStakingRewardDestination;
+        destinationByAddress[accountAddress] = destination as unknown as RewardDestination;
       });
     } else {
       const allAccountsInBlock = allEventsInBlock.map((event) => {
@@ -74,26 +68,20 @@ export async function cachedRewardDestination(
       // looks like accountAddress not related to events so just try to query payee directly
       if (allAccountsInBlock.length === 0) {
         rewardDestinationByAddress[blockId] = {};
-        return (await api.query.staking.payee(
-          accountAddress,
-        )) as unknown as PalletStakingRewardDestination;
+        return (await api.query.staking.payee(accountAddress)) as unknown as RewardDestination;
       }
 
-      // TODO: Commented code doesn't work now, may be fixed later
-      // const payees = await api.query.staking.payee.multi(allAccountsInBlock);
       const payees = await api.queryMulti(
         allAccountsInBlock.map((account) => [api.query.staking.payee, account]),
       );
 
       const rewardDestinations = payees.map((payee) => {
-        return payee as PalletStakingRewardDestination;
+        return payee as unknown as RewardDestination;
       });
 
       // something went wrong, so just query for single accountAddress
       if (rewardDestinations.length !== allAccountsInBlock.length) {
-        const payee = (await api.query.staking.payee(
-          accountAddress,
-        )) as unknown as PalletStakingRewardDestination;
+        const payee = (await api.query.staking.payee(accountAddress)) as unknown as RewardDestination;
         destinationByAddress[accountAddress] = payee;
         rewardDestinationByAddress[blockId] = destinationByAddress;
         return payee;
@@ -150,7 +138,7 @@ export async function cachedController(
       );
 
       if (rewardDestination.isController) {
-        controllerNeedAccounts.push(accountId as AccountId);
+        controllerNeedAccounts.push(accountId as unknown as AccountId);
       }
     }
 
@@ -161,8 +149,6 @@ export async function cachedController(
       return accountId.toString();
     }
 
-    // TODO: Commented code doesn't work now, may be fixed later
-    // const bonded = await api.query.staking.bonded.multi(controllerNeedAccounts);
     const bonded = await api.queryMulti(
       controllerNeedAccounts.map((account) => [
         api.query.staking.bonded,
@@ -207,7 +193,7 @@ export async function cachedStakingRewardEraIndex(
       api.consts.parachainStaking.rewardPaymentDelay.toHuman();
     // HACK: used to get data from object
     const eraIndex =
-      (era.toJSON() as { current: any }).current - Number(paymentDelay);
+      (era.toJSON() as { current: number }).current - Number(paymentDelay);
 
     parachainStakingRewardEra = {};
     parachainStakingRewardEra[blockId] = eraIndex;
@@ -217,22 +203,21 @@ export async function cachedStakingRewardEraIndex(
 
 export async function getPoolMembers(
   blockId: number,
-): Promise<[string, PalletNominationPoolsPoolMember][]> {
+): Promise<[string, any][]> {
   const cachedMembers = poolMembers[blockId];
   if (cachedMembers != undefined) {
     return cachedMembers;
   }
 
-  const members: [string, PalletNominationPoolsPoolMember][] = (
+  const members: [string, any][] = (
     await api.query.nominationPools.poolMembers.entries()
   )
     .filter(
-      ([_, member]) =>
-        (member as Option<PalletNominationPoolsPoolMember>).isSome,
+      ([_key, member]) => (member as Option<any>).isSome,
     )
     .map(([accountId, member]) => [
       accountId.args[0].toString(),
-      (member as Option<PalletNominationPoolsPoolMember>).unwrap(),
+      (member as Option<any>).unwrap(),
     ]);
   poolMembers = {};
   poolMembers[blockId] = members;
