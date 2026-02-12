@@ -2322,6 +2322,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@subql/common-substrate@npm:^4.5.5":
+  version: 4.5.5
+  resolution: "@subql/common-substrate@npm:4.5.5"
+  dependencies:
+    "@subql/common": "npm:~5.8.2"
+    "@subql/types": "npm:~3.15.0"
+  peerDependencies:
+    class-transformer: ^0.5.1
+    class-validator: 0.14.1
+  checksum: 10c0/e2c1e5cb2fc80ce1a7abf3b1540126c541397e4a462dcc9ec6d5a74c991aae5298a18ca1bcf6335ee5e82f56bb1138493c5370c092985a5aa9bc094027eb0b7d
+  languageName: node
+  linkType: hard
+
 "@subql/common@npm:~5.8.2":
   version: 5.8.2
   resolution: "@subql/common@npm:5.8.2"
@@ -2395,7 +2408,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@subql/types@npm:latest":
+"@subql/types@npm:latest, @subql/types@npm:~3.15.0":
   version: 3.15.0
   resolution: "@subql/types@npm:3.15.0"
   dependencies:
@@ -8159,6 +8172,7 @@ __metadata:
     "@pezkuwi/util": "npm:^14.0.25"
     "@pezkuwi/util-crypto": "npm:^14.0.25"
     "@subql/cli": "npm:latest"
+    "@subql/common-substrate": "npm:^4.5.5"
     "@subql/types": "npm:latest"
     "@types/jest": "npm:^29.5.1"
     jest: "npm:^29.5.0"

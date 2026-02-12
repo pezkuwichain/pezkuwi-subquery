@@ -1,13 +1,12 @@
 version: "3"
 services:
   postgres:
-    container_name: "postgres-${PROJECT_PATH}"
+    container_name: "postgres-pezkuwi"
     image: postgres:16-alpine
     ports:
       - 5432:5432
     volumes:
       - .data/postgres:/var/lib/postgresql/data
-      - ./docker/init:/docker-entrypoint-initdb.d/
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -17,8 +16,10 @@ services:
       POSTGRES_PASSWORD: postgres
 
   subquery-node:
-    container_name: "node-${PROJECT_PATH}"
-    image: onfinality/subql-node:v5.6.0
+    container_name: "node-pezkuwi"
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.node
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,16 +29,16 @@ services:
       DB_PASS: postgres
       DB_DATABASE: postgres
       DB_HOST: postgres
-      DB_POST: 5432
+      DB_PORT: 5432
     volumes:
-      - ./:/app
+      - ./:/app/project
     command:
-      - -f=/app/${PROJECT_PATH}
+      - -f=/app/project/pezkuwi.yaml
       - --disable-historical=true
-      - --batch-size=1
+      - --batch-size=30
 
   graphql-engine:
-    container_name: "query-${PROJECT_PATH}"
+    container_name: "query-pezkuwi"
     image: onfinality/subql-query:v1.5.0
     ports:
       - 3000:3000

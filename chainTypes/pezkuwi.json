@@ -1,0 +1,53 @@
+{
+  "types": {
+    "DispatchErrorModule": "DispatchErrorModuleU8",
+    "FullIdentification": "()",
+    "Keys": "SessionKeys7B",
+    "Weight": "WeightV1"
+  },
+  "typesBundle": {
+    "spec": {
+      "pezkuwi": {
+        "types": [
+          {
+            "minmax": [0, 200],
+            "types": {
+              "DispatchErrorModule": "DispatchErrorModuleU8",
+              "FullIdentification": "()",
+              "Keys": "SessionKeys7B",
+              "Weight": "WeightV1",
+              "AccountInfo": "AccountInfoWithDualRefCount",
+              "Address": "AccountId",
+              "LookupSource": "AccountId"
+            }
+          },
+          {
+            "minmax": [201, 214],
+            "types": {
+              "DispatchErrorModule": "DispatchErrorModuleU8",
+              "FullIdentification": "()",
+              "Keys": "SessionKeys7B",
+              "Weight": "WeightV1",
+              "AccountInfo": "AccountInfoWithDualRefCount"
+            }
+          },
+          {
+            "minmax": [215, 228],
+            "types": {
+              "DispatchErrorModule": "DispatchErrorModuleU8",
+              "FullIdentification": "()",
+              "Keys": "SessionKeys6",
+              "Weight": "WeightV1"
+            }
+          },
+          {
+            "minmax": [229, null],
+            "types": {
+              "Weight": "WeightV1"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

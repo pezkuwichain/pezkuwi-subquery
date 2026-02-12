@@ -17,6 +17,8 @@ network:
   endpoint:
     - wss://rpc.pezkuwichain.io
     - wss://mainnet.pezkuwichain.io
+  chaintypes:
+    file: ./chainTypes/pezkuwi.json
 dataSources:
   - name: main
     kind: substrate/Runtime
