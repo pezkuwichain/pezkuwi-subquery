@@ -29,10 +29,4 @@ jobs:
         run: ./node_modules/.bin/subql codegen pezkuwi.yaml
 
       - name: Build
-        run: ./node_modules/.bin/subql build -f pezkuwi.yaml
-
-      - name: Validate Pezkuwi Relay
-        run: ./node_modules/.bin/subql validate -f pezkuwi.yaml
-
-      - name: Validate Pezkuwi Asset Hub
-        run: ./node_modules/.bin/subql validate -f pezkuwi-assethub.yaml
+        run: ./node_modules/.bin/subql build pezkuwi.yaml

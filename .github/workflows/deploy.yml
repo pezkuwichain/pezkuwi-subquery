@@ -42,7 +42,7 @@ jobs:
         run: ./node_modules/.bin/subql codegen pezkuwi.yaml
 
       - name: Build
-        run: ./node_modules/.bin/subql build -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql build pezkuwi.yaml
 
       - name: Publish Pezkuwi Relay
         run: ./node_modules/.bin/subql publish -f pezkuwi.yaml
@@ -70,7 +70,7 @@ jobs:
         run: ./node_modules/.bin/subql codegen pezkuwi.yaml
 
       - name: Build
-        run: ./node_modules/.bin/subql build -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql build pezkuwi.yaml
 
       - name: Publish Pezkuwi Asset Hub
         run: ./node_modules/.bin/subql publish -f pezkuwi-assethub.yaml
