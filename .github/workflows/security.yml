@@ -38,7 +38,7 @@ jobs:
         run: yarn install --immutable
 
       - name: Build
-        run: yarn build -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql build -f pezkuwi.yaml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

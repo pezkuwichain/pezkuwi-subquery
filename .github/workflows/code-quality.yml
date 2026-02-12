@@ -72,7 +72,7 @@ jobs:
         run: yarn install --immutable
 
       - name: Generate types
-        run: yarn codegen -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql codegen pezkuwi.yaml
 
       - name: TypeScript check
         run: yarn tsc --noEmit

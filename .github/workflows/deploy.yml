@@ -39,10 +39,10 @@ jobs:
         run: yarn install --immutable
 
       - name: Generate types
-        run: yarn codegen -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql codegen pezkuwi.yaml
 
       - name: Build
-        run: yarn build -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql build -f pezkuwi.yaml
 
       - name: Publish Pezkuwi Relay
         run: ./node_modules/.bin/subql publish -f pezkuwi.yaml
@@ -67,10 +67,10 @@ jobs:
         run: yarn install --immutable
 
       - name: Generate types
-        run: yarn codegen -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql codegen pezkuwi.yaml
 
       - name: Build
-        run: yarn build -f pezkuwi.yaml
+        run: ./node_modules/.bin/subql build -f pezkuwi.yaml
 
       - name: Publish Pezkuwi Asset Hub
         run: ./node_modules/.bin/subql publish -f pezkuwi-assethub.yaml
