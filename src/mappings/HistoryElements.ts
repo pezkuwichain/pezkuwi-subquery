@@ -18,7 +18,7 @@ type TransferData = {
 };
 
 export async function handleHistoryElement(
-  extrinsic: SubstrateExtrinsic
+  extrinsic: SubstrateExtrinsic,
 ): Promise<void> {
   const { isSigned } = extrinsic.extrinsic;
 
@@ -36,7 +36,7 @@ function createHistoryElement(
   extrinsic: SubstrateExtrinsic,
   address: string,
   suffix: string = "",
-  hash?: string
+  hash?: string,
 ) {
   let extrinsicHash = hash || extrinsic.extrinsic.hash.toString();
   let blockNum = extrinsic.block.block.header.number.toNumber();
@@ -59,7 +59,7 @@ function createHistoryElement(
 
 async function saveFailedTransfers(
   transfers: Array<TransferData>,
-  extrinsic: SubstrateExtrinsic
+  extrinsic: SubstrateExtrinsic,
 ): Promise<void> {
   for (const { isTransferAll, transfer } of transfers) {
     const elementFrom = createHistoryElement(extrinsic, transfer.from, `-from`);
@@ -79,7 +79,7 @@ async function saveExtrinsic(extrinsic: SubstrateExtrinsic): Promise<void> {
   const element = createHistoryElement(
     extrinsic,
     extrinsic.extrinsic.signer.toString(),
-    "-extrinsic"
+    "-extrinsic",
   );
 
   element.extrinsic = {
@@ -93,7 +93,7 @@ async function saveExtrinsic(extrinsic: SubstrateExtrinsic): Promise<void> {
 }
 
 function findFailedTransferCalls(
-  extrinsic: SubstrateExtrinsic
+  extrinsic: SubstrateExtrinsic,
 ): Array<TransferData> | null {
   if (extrinsic.success) {
     return null;
@@ -104,7 +104,7 @@ function findFailedTransferCalls(
   const createTransfer = (
     isTransferAll: boolean,
     address: string,
-    amount: bigint
+    amount: bigint,
   ): TransferData => {
     return {
       isTransferAll,
@@ -121,7 +121,7 @@ function findFailedTransferCalls(
 
   let transferCalls = determineTransferCallsArgs(
     extrinsic.extrinsic.method,
-    createTransfer
+    createTransfer,
   );
 
   if (transferCalls.length == 0) {
@@ -133,11 +133,21 @@ function findFailedTransferCalls(
 
 function determineTransferCallsArgs(
   causeCall: any,
-  createTransfer: (isTransferAll: boolean, address: string, amount: bigint) => TransferData
+  createTransfer: (
+    isTransferAll: boolean,
+    address: string,
+    amount: bigint,
+  ) => TransferData,
 ): Array<TransferData> {
   if (isNativeTransfer(causeCall)) {
     const [destinationAddress, amount] = causeCall.args;
-    return [createTransfer(false, destinationAddress.toString(), (amount as any).toBigInt())];
+    return [
+      createTransfer(
+        false,
+        destinationAddress.toString(),
+        (amount as any).toBigInt(),
+      ),
+    ];
   } else if (isNativeTransferAll(causeCall)) {
     const [destinationAddress] = causeCall.args;
     return [createTransfer(true, destinationAddress.toString(), BigInt(0))];

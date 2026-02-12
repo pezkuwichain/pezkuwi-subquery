@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      - name: Generate types
+        run: ./node_modules/.bin/subql codegen pezkuwi.yaml
+
       - name: Build
         run: ./node_modules/.bin/subql build pezkuwi.yaml
 

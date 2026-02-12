@@ -70,12 +70,14 @@ async function processEraStakersPaged(
       const pageNumber = (pageId as any).toNumber();
       const validatorIdString = validatorId.toString();
 
-      const others: IndividualExposure[] = exposure.others.map(({ who, value }: any) => {
-        return {
-          who: who.toString(),
-          value: value.toString(),
-        } as IndividualExposure;
-      });
+      const others: IndividualExposure[] = exposure.others.map(
+        ({ who, value }: any) => {
+          return {
+            who: who.toString(),
+            value: value.toString(),
+          } as IndividualExposure;
+        },
+      );
 
       (accumulator[validatorIdString] = accumulator[validatorIdString] || {})[
         pageNumber

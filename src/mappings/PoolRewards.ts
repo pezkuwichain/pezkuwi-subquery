@@ -145,8 +145,7 @@ export async function handlePoolUnbondingSlash(
   ).unwrap();
 
   const pool =
-    (unbondingPools.withEra as any).get(eraIdNumber) ??
-    unbondingPools.noEra;
+    (unbondingPools.withEra as any).get(eraIdNumber) ?? unbondingPools.noEra;
 
   await handleRelaychainPooledStakingSlash(
     unbondingSlashEvent,
@@ -155,8 +154,7 @@ export async function handlePoolUnbondingSlash(
     (slash as any).toBigInt(),
     (member: any): bigint => {
       return (
-        ((member.unbondingEras as any).get(eraIdNumber))?.toBigInt() ??
-        BigInt(0)
+        (member.unbondingEras as any).get(eraIdNumber)?.toBigInt() ?? BigInt(0)
       );
     },
   );

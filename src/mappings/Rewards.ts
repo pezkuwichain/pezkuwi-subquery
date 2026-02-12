@@ -60,7 +60,9 @@ function extractArgsFromPayoutValidator(
   return [sender, (eraRaw as any).toNumber()];
 }
 
-export async function handleRewarded(rewardEvent: SubstrateEvent): Promise<void> {
+export async function handleRewarded(
+  rewardEvent: SubstrateEvent,
+): Promise<void> {
   await handleReward(rewardEvent);
 }
 

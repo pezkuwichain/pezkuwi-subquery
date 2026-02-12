@@ -53,7 +53,8 @@ export async function cachedRewardDestination(
           },
         } = event;
         let accountAddress = accountId.toString();
-        destinationByAddress[accountAddress] = destination as unknown as RewardDestination;
+        destinationByAddress[accountAddress] =
+          destination as unknown as RewardDestination;
       });
     } else {
       const allAccountsInBlock = allEventsInBlock.map((event) => {
@@ -68,7 +69,9 @@ export async function cachedRewardDestination(
       // looks like accountAddress not related to events so just try to query payee directly
       if (allAccountsInBlock.length === 0) {
         rewardDestinationByAddress[blockId] = {};
-        return (await api.query.staking.payee(accountAddress)) as unknown as RewardDestination;
+        return (await api.query.staking.payee(
+          accountAddress,
+        )) as unknown as RewardDestination;
       }
 
       const payees = await api.queryMulti(
@@ -81,7 +84,9 @@ export async function cachedRewardDestination(
 
       // something went wrong, so just query for single accountAddress
       if (rewardDestinations.length !== allAccountsInBlock.length) {
-        const payee = (await api.query.staking.payee(accountAddress)) as unknown as RewardDestination;
+        const payee = (await api.query.staking.payee(
+          accountAddress,
+        )) as unknown as RewardDestination;
         destinationByAddress[accountAddress] = payee;
         rewardDestinationByAddress[blockId] = destinationByAddress;
         return payee;
@@ -212,9 +217,7 @@ export async function getPoolMembers(
   const members: [string, any][] = (
     await api.query.nominationPools.poolMembers.entries()
   )
-    .filter(
-      ([_key, member]) => (member as Option<any>).isSome,
-    )
+    .filter(([_key, member]) => (member as Option<any>).isSome)
     .map(([accountId, member]) => [
       accountId.args[0].toString(),
       (member as Option<any>).unwrap(),
