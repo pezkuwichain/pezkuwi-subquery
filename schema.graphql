@@ -17,7 +17,7 @@ type AssetTransfer @jsonField {
   success: Boolean!
 }
 
-type Reward @jsonField {
+type RewardInfo @jsonField {
   eventIdx: Int!
   amount: String!
   isReward: Boolean!
@@ -97,7 +97,7 @@ type HistoryElement @entity {
   extrinsicHash: String
   timestamp: BigInt! @index
   address: String! @index
-  reward: Reward
+  reward: RewardInfo
   poolReward: PoolReward
   extrinsic: Extrinsic
   transfer: Transfer
@@ -122,4 +122,31 @@ type IndividualExposure @jsonField {
 type ErrorEvent @entity {
   id: ID!
   description: String!
+}
+
+# ===== Multi-staking API entities (used by PezWallet dashboard) =====
+
+type StakingApy @entity {
+  id: ID!
+  networkId: String! @index
+  stakingType: String! @index
+  maxAPY: Float!
+}
+
+type ActiveStaker @entity {
+  id: ID!
+  networkId: String! @index
+  stakingType: String! @index
+  address: String! @index
+}
+
+type Reward @entity {
+  id: ID!
+  networkId: String! @index
+  stakingType: String! @index
+  address: String! @index
+  type: RewardType! @index
+  amount: BigInt!
+  timestamp: BigInt!
+  blockNumber: Int! @index
 }

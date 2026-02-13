@@ -1,0 +1,79 @@
+version: "3.8"
+services:
+  postgres:
+    container_name: postgres-pezkuwi
+    image: postgres:16-alpine
+    ports:
+      - 5432:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      POSTGRES_PASSWORD: pezkuwi_subquery_2024
+    restart: always
+
+  subquery-node-relay:
+    container_name: node-pezkuwi-relay
+    image: onfinality/subql-node:latest
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: always
+    environment:
+      DB_USER: postgres
+      DB_PASS: pezkuwi_subquery_2024
+      DB_DATABASE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+    volumes:
+      - ./:/app/project
+    command:
+      - -f=/app/project/pezkuwi.yaml
+      - --disable-historical=true
+      - --batch-size=30
+
+  subquery-node-assethub:
+    container_name: node-pezkuwi-assethub
+    image: onfinality/subql-node:latest
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: always
+    environment:
+      DB_USER: postgres
+      DB_PASS: pezkuwi_subquery_2024
+      DB_DATABASE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+    volumes:
+      - ./:/app/project
+    command:
+      - -f=/app/project/pezkuwi-assethub.yaml
+      - --disable-historical=true
+      - --batch-size=30
+
+  graphql-engine:
+    container_name: query-pezkuwi
+    image: onfinality/subql-query:v1.5.0
+    ports:
+      - 3000:3000
+    depends_on:
+      - subquery-node-relay
+      - subquery-node-assethub
+    restart: always
+    environment:
+      DB_USER: postgres
+      DB_PASS: pezkuwi_subquery_2024
+      DB_DATABASE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+    command:
+      - --name=subquery-pezkuwi-staking
+      - --playground
+      - --indexer=http://subquery-node-relay:3000
+
+volumes:
+  pgdata:

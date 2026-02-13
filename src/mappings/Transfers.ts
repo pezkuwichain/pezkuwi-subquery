@@ -1,4 +1,4 @@
-import { HistoryElement, Transfer } from "../types";
+import { HistoryElement, Transfer, AssetTransfer } from "../types";
 import { SubstrateEvent } from "@subql/types";
 import {
   blockNumber,
@@ -59,5 +59,44 @@ async function createTransfer(
   }
 
   element.transfer = transfer;
+  await element.save();
+}
+
+export async function handleAssetTransfer(event: SubstrateEvent): Promise<void> {
+  const [assetId, from, to, amount] = getEventData(event);
+
+  const assetTransferData: AssetTransfer = {
+    assetId: assetId.toString(),
+    amount: amount.toString(),
+    from: from.toString(),
+    to: to.toString(),
+    fee: calculateFeeAsString(event.extrinsic, from.toString()),
+    eventIdx: event.idx,
+    success: true,
+  };
+
+  await createAssetTransferHistory(event, from.toString(), "-from", assetTransferData);
+  await createAssetTransferHistory(event, to.toString(), "-to", assetTransferData);
+}
+
+async function createAssetTransferHistory(
+  event: SubstrateEvent,
+  address: string,
+  suffix: string,
+  data: AssetTransfer,
+): Promise<void> {
+  const element = new HistoryElement(
+    `${eventId(event)}${suffix}`,
+    blockNumber(event),
+    timestamp(event.block),
+    address,
+  );
+
+  if (event.extrinsic !== undefined) {
+    element.extrinsicHash = event.extrinsic.extrinsic.hash.toString();
+    element.extrinsicIdx = event.extrinsic.idx;
+  }
+
+  element.assetTransfer = data;
   await element.save();
 }

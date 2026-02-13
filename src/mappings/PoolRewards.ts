@@ -3,10 +3,12 @@ import {
   AccumulatedReward,
   AccumulatedPoolReward,
   HistoryElement,
+  Reward,
   RewardType,
 } from "../types";
 import { SubstrateEvent } from "@subql/types";
 import {
+  eventId,
   eventIdFromBlockAndIdxAndAddress,
   timestamp,
   eventIdWithAddress,
@@ -18,6 +20,11 @@ import {
 } from "./Rewards";
 import { getPoolMembers } from "./Cache";
 import { Option } from "@pezkuwi/types";
+import {
+  PEZKUWI_RELAY_GENESIS,
+  PEZKUWI_ASSET_HUB_GENESIS,
+  STAKING_TYPE_NOMINATION_POOL,
+} from "./constants";
 
 export async function handlePoolReward(
   rewardEvent: SubstrateEvent,
@@ -36,6 +43,13 @@ export async function handlePoolReward(
     (poolId as any).toNumber(),
     RewardType.reward,
     accumulatedReward.amount,
+  );
+  // Save to multi-staking Reward entity for both relay and Asset Hub networkIds
+  await savePoolMultiStakingReward(
+    rewardEvent,
+    accountId.toString(),
+    (amount as any).toBigInt(),
+    RewardType.reward,
   );
 }
 
@@ -200,6 +214,13 @@ async function handleRelaychainPooledStakingSlash(
           RewardType.slash,
           accumulatedReward.amount,
         );
+        // Save to multi-staking Reward entity
+        await savePoolMultiStakingReward(
+          event,
+          accountId,
+          personalSlash,
+          RewardType.slash,
+        );
       }
     }
   }
@@ -238,4 +259,33 @@ async function handlePoolSlashForTxHistory(
   });
 
   await element.save();
+}
+
+/**
+ * Save pool reward/slash to the multi-staking Reward entity
+ * Saves for both relay chain and Asset Hub networkIds since nom pools
+ * are accessible from both contexts
+ */
+async function savePoolMultiStakingReward(
+  event: SubstrateEvent,
+  accountAddress: string,
+  amount: bigint,
+  rewardType: RewardType,
+): Promise<void> {
+  const ts = timestamp(event.block);
+  const bn = blockNumber(event);
+  const baseId = `${eventId(event)}-${accountAddress}-pool`;
+
+  // Save for Asset Hub networkId (nomination pools are accessed via Asset Hub)
+  const ahReward = Reward.create({
+    id: `${baseId}-ah`,
+    networkId: PEZKUWI_ASSET_HUB_GENESIS,
+    stakingType: STAKING_TYPE_NOMINATION_POOL,
+    address: accountAddress,
+    type: rewardType,
+    amount,
+    timestamp: ts,
+    blockNumber: bn,
+  });
+  await ahReward.save();
 }

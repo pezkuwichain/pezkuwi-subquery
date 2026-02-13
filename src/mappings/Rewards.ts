@@ -3,6 +3,7 @@ import {
   AccumulatedReward,
   HistoryElement,
   Reward,
+  RewardInfo,
   RewardType,
 } from "../types";
 import {
@@ -26,6 +27,10 @@ import {
   cachedController,
   cachedStakingRewardEraIndex,
 } from "./Cache";
+import {
+  PEZKUWI_RELAY_GENESIS,
+  STAKING_TYPE_RELAYCHAIN,
+} from "./constants";
 
 function isPayoutStakers(call: any): boolean {
   return call.method == "payoutStakers";
@@ -74,6 +79,7 @@ export async function handleReward(rewardEvent: SubstrateEvent): Promise<void> {
     RewardType.reward,
     accumulatedReward.amount,
   );
+  await saveMultiStakingReward(rewardEvent, RewardType.reward, STAKING_TYPE_RELAYCHAIN);
 }
 
 async function handleRewardForTxHistory(
@@ -220,6 +226,7 @@ export async function handleSlash(slashEvent: SubstrateEvent): Promise<void> {
     RewardType.slash,
     accumulatedReward.amount,
   );
+  await saveMultiStakingReward(slashEvent, RewardType.slash, STAKING_TYPE_RELAYCHAIN);
 }
 
 async function getValidators(era: number): Promise<Set<string>> {
@@ -297,7 +304,7 @@ async function buildRewardEvents<A>(
     eventIdx: number,
     stash: string,
     amount: string,
-  ) => Reward,
+  ) => RewardInfo,
 ) {
   let blockNum = block.block.header.number.toString();
   let blockTimestamp = timestamp(block);
@@ -520,4 +527,30 @@ function decodeDataFromReward(event: SubstrateEvent): [any, any] {
     [account, , amount] = innerData;
   }
   return [account, amount];
+}
+
+/**
+ * Save a reward/slash to the multi-staking Reward entity
+ * (used by PezWallet dashboard for rewards aggregation)
+ */
+export async function saveMultiStakingReward(
+  event: SubstrateEvent,
+  rewardType: RewardType,
+  stakingType: string,
+): Promise<void> {
+  const [accountId, amount] = decodeDataFromReward(event);
+  const accountAddress = accountId.toString();
+  const id = `${eventId(event)}-${accountAddress}-${stakingType}`;
+
+  const reward = Reward.create({
+    id,
+    networkId: PEZKUWI_RELAY_GENESIS,
+    stakingType,
+    address: accountAddress,
+    type: rewardType,
+    amount: (amount as any).toBigInt(),
+    timestamp: timestamp(event.block),
+    blockNumber: blockNumber(event),
+  });
+  await reward.save();
 }

@@ -1,9 +1,20 @@
 import { SubstrateEvent } from "@subql/types";
 import { eventId } from "./common";
-import { EraValidatorInfo } from "../types/models/EraValidatorInfo";
+import { EraValidatorInfo, StakingApy, ActiveStaker } from "../types";
 import { IndividualExposure } from "../types";
 import { Option } from "@pezkuwi/types";
 import { Exposure } from "@pezkuwi/types/interfaces/staking";
+import {
+  PEZKUWI_RELAY_GENESIS,
+  PEZKUWI_ASSET_HUB_GENESIS,
+  STAKING_TYPE_RELAYCHAIN,
+  STAKING_TYPE_NOMINATION_POOL,
+  INFLATION_FALLOFF,
+  INFLATION_MAX,
+  INFLATION_MIN,
+  INFLATION_STAKE_TARGET,
+  PERBILL_DIVISOR,
+} from "./constants";
 
 export async function handleStakersElected(
   event: SubstrateEvent,
@@ -16,45 +27,75 @@ export async function handleNewEra(event: SubstrateEvent): Promise<void> {
     .unwrap()
     .toNumber();
 
+  let validatorExposures: Array<{
+    address: string;
+    total: bigint;
+    own: bigint;
+    others: IndividualExposure[];
+  }>;
+
   if (api.query.staking.erasStakersOverview) {
-    await processEraStakersPaged(event, currentEra);
+    validatorExposures = await processEraStakersPaged(event, currentEra);
   } else {
-    await processEraStakersClipped(event, currentEra);
+    validatorExposures = await processEraStakersClipped(event, currentEra);
   }
+
+  // Compute and save APY + active stakers
+  await updateStakingApyAndActiveStakers(currentEra, validatorExposures);
+}
+
+interface ValidatorExposureData {
+  address: string;
+  total: bigint;
+  own: bigint;
+  others: IndividualExposure[];
 }
 
 async function processEraStakersClipped(
   event: SubstrateEvent,
   currentEra: number,
-): Promise<void> {
+): Promise<ValidatorExposureData[]> {
   const exposures =
     await api.query.staking.erasStakersClipped.entries(currentEra);
+
+  const result: ValidatorExposureData[] = [];
 
   for (const [key, exposure] of exposures) {
     const [, validatorId] = key.args;
     let validatorIdString = validatorId.toString();
     const exp = exposure as unknown as Exposure;
+    const others = exp.others.map((other) => {
+      return {
+        who: other.who.toString(),
+        value: other.value.toString(),
+      } as IndividualExposure;
+    });
+
     const eraValidatorInfo = new EraValidatorInfo(
       eventId(event) + validatorIdString,
       validatorIdString,
       currentEra,
       exp.total.toBigInt(),
       exp.own.toBigInt(),
-      exp.others.map((other) => {
-        return {
-          who: other.who.toString(),
-          value: other.value.toString(),
-        } as IndividualExposure;
-      }),
+      others,
     );
     await eraValidatorInfo.save();
+
+    result.push({
+      address: validatorIdString,
+      total: exp.total.toBigInt(),
+      own: exp.own.toBigInt(),
+      others,
+    });
   }
+
+  return result;
 }
 
 async function processEraStakersPaged(
   event: SubstrateEvent,
   currentEra: number,
-): Promise<void> {
+): Promise<ValidatorExposureData[]> {
   const overview =
     await api.query.staking.erasStakersOverview.entries(currentEra);
   const pages = await api.query.staking.erasStakersPaged.entries(currentEra);
@@ -87,6 +128,8 @@ async function processEraStakersPaged(
     {},
   );
 
+  const result: ValidatorExposureData[] = [];
+
   for (const [key, exp] of overview) {
     const exposure = (exp as Option<any>).unwrap();
     const [, validatorId] = key.args;
@@ -106,5 +149,178 @@ async function processEraStakersPaged(
       others,
     );
     await eraValidatorInfo.save();
+
+    result.push({
+      address: validatorIdString,
+      total: exposure.total.toBigInt(),
+      own: exposure.own.toBigInt(),
+      others,
+    });
   }
+
+  return result;
+}
+
+// ===== APY Calculation (Substrate inflation curve) =====
+
+function calculateYearlyInflation(stakedPortion: number): number {
+  const idealStake = INFLATION_STAKE_TARGET; // No parachains on Pezkuwi
+  const idealInterest = INFLATION_MAX / idealStake;
+
+  if (stakedPortion >= 0 && stakedPortion <= idealStake) {
+    return (
+      INFLATION_MIN +
+      stakedPortion * (idealInterest - INFLATION_MIN / idealStake)
+    );
+  } else {
+    return (
+      INFLATION_MIN +
+      (idealInterest * idealStake - INFLATION_MIN) *
+        Math.pow(2, (idealStake - stakedPortion) / INFLATION_FALLOFF)
+    );
+  }
+}
+
+interface ValidatorAPYData {
+  totalStake: bigint;
+  commission: number; // 0.0 to 1.0
+}
+
+function calculateMaxAPY(
+  totalIssuance: bigint,
+  validators: ValidatorAPYData[],
+): number {
+  if (validators.length === 0 || totalIssuance === BigInt(0)) return 0;
+
+  const totalStaked = validators.reduce(
+    (sum, v) => sum + v.totalStake,
+    BigInt(0),
+  );
+  if (totalStaked === BigInt(0)) return 0;
+
+  // Use scaled division for precision with large BigInts
+  const SCALE = BigInt(1_000_000_000);
+  const stakedPortion =
+    Number((totalStaked * SCALE) / totalIssuance) / Number(SCALE);
+
+  const yearlyInflation = calculateYearlyInflation(stakedPortion);
+  const averageValidatorRewardPercentage = yearlyInflation / stakedPortion;
+  const averageValidatorStake = totalStaked / BigInt(validators.length);
+
+  let maxAPY = 0;
+  for (const v of validators) {
+    if (v.totalStake === BigInt(0)) continue;
+    const stakeRatio =
+      Number((averageValidatorStake * SCALE) / v.totalStake) / Number(SCALE);
+    const yearlyRewardPercentage =
+      averageValidatorRewardPercentage * stakeRatio;
+    const apy = yearlyRewardPercentage * (1 - v.commission);
+    if (apy > maxAPY) maxAPY = apy;
+  }
+
+  return maxAPY;
+}
+
+async function updateStakingApyAndActiveStakers(
+  currentEra: number,
+  validatorExposures: ValidatorExposureData[],
+): Promise<void> {
+  if (validatorExposures.length === 0) return;
+
+  // 1. Get total issuance from the relay chain
+  const totalIssuance = (
+    (await api.query.balances.totalIssuance()) as any
+  ).toBigInt();
+
+  // 2. Get validator commissions
+  const validatorAddresses = validatorExposures.map((v) => v.address);
+  const validatorPrefs = await api.query.staking.validators.multi(
+    validatorAddresses,
+  );
+
+  const validatorsWithCommission: ValidatorAPYData[] =
+    validatorExposures.map((v, i) => {
+      const prefs = validatorPrefs[i] as any;
+      const commissionPerbill = prefs.commission
+        ? Number(prefs.commission.toString())
+        : 0;
+      return {
+        totalStake: v.total,
+        commission: commissionPerbill / PERBILL_DIVISOR,
+      };
+    });
+
+  // 3. Calculate maxAPY
+  const maxAPY = calculateMaxAPY(totalIssuance, validatorsWithCommission);
+
+  // 4. Save StakingApy for relay chain (relaychain staking)
+  const relayApyId = `${PEZKUWI_RELAY_GENESIS}-${STAKING_TYPE_RELAYCHAIN}`;
+  const relayApy = StakingApy.create({
+    id: relayApyId,
+    networkId: PEZKUWI_RELAY_GENESIS,
+    stakingType: STAKING_TYPE_RELAYCHAIN,
+    maxAPY,
+  });
+  await relayApy.save();
+
+  // 5. Save StakingApy for Asset Hub (relaychain staking option)
+  const ahRelayApyId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_RELAYCHAIN}`;
+  const ahRelayApy = StakingApy.create({
+    id: ahRelayApyId,
+    networkId: PEZKUWI_ASSET_HUB_GENESIS,
+    stakingType: STAKING_TYPE_RELAYCHAIN,
+    maxAPY,
+  });
+  await ahRelayApy.save();
+
+  // 6. Save StakingApy for Asset Hub (nomination-pool staking option)
+  const ahPoolApyId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_NOMINATION_POOL}`;
+  const ahPoolApy = StakingApy.create({
+    id: ahPoolApyId,
+    networkId: PEZKUWI_ASSET_HUB_GENESIS,
+    stakingType: STAKING_TYPE_NOMINATION_POOL,
+    maxAPY,
+  });
+  await ahPoolApy.save();
+
+  logger.info(
+    `Era ${currentEra}: maxAPY=${(maxAPY * 100).toFixed(2)}% validators=${validatorExposures.length} totalIssuance=${totalIssuance}`,
+  );
+
+  // 7. Collect all unique nominator addresses from exposures (active stakers)
+  const activeNominators = new Set<string>();
+  for (const v of validatorExposures) {
+    for (const nominator of v.others) {
+      activeNominators.add(nominator.who);
+    }
+  }
+
+  // 8. Clear previous active stakers and save new ones
+  // For relay chain direct staking
+  for (const address of activeNominators) {
+    const relayStakerId = `${PEZKUWI_RELAY_GENESIS}-${STAKING_TYPE_RELAYCHAIN}-${address}`;
+    const staker = ActiveStaker.create({
+      id: relayStakerId,
+      networkId: PEZKUWI_RELAY_GENESIS,
+      stakingType: STAKING_TYPE_RELAYCHAIN,
+      address,
+    });
+    await staker.save();
+  }
+
+  // Also save validators themselves as active stakers
+  for (const v of validatorExposures) {
+    const validatorStakerId = `${PEZKUWI_RELAY_GENESIS}-${STAKING_TYPE_RELAYCHAIN}-${v.address}`;
+    const staker = ActiveStaker.create({
+      id: validatorStakerId,
+      networkId: PEZKUWI_RELAY_GENESIS,
+      stakingType: STAKING_TYPE_RELAYCHAIN,
+      address: v.address,
+    });
+    await staker.save();
+  }
+
+  logger.info(
+    `Era ${currentEra}: saved ${activeNominators.size} active stakers (relay)`,
+  );
 }
