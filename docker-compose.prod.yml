@@ -33,6 +33,7 @@ services:
       - ./:/app/project
     command:
       - -f=/app/project/pezkuwi.yaml
+      - --db-schema=subquery-pezkuwi-staking
       - --disable-historical=true
       - --batch-size=30
 
@@ -52,6 +53,7 @@ services:
       - ./:/app/project
     command:
       - -f=/app/project/pezkuwi-assethub.yaml
+      - --db-schema=subquery-pezkuwi-assethub
       - --disable-historical=true
       - --batch-size=30
 
