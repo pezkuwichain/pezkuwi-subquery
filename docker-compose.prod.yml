@@ -19,7 +19,9 @@ services:
 
   subquery-node-relay:
     container_name: node-pezkuwi-relay
-    image: onfinality/subql-node:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node
     depends_on:
       postgres: { condition: service_healthy }
     restart: always
@@ -39,7 +41,9 @@ services:
 
   subquery-node-assethub:
     container_name: node-pezkuwi-assethub
-    image: onfinality/subql-node:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node
     depends_on:
       postgres: { condition: service_healthy }
     restart: always
