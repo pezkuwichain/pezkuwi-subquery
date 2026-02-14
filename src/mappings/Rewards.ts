@@ -27,10 +27,7 @@ import {
   cachedController,
   cachedStakingRewardEraIndex,
 } from "./Cache";
-import {
-  PEZKUWI_RELAY_GENESIS,
-  STAKING_TYPE_RELAYCHAIN,
-} from "./constants";
+import { PEZKUWI_RELAY_GENESIS, STAKING_TYPE_RELAYCHAIN } from "./constants";
 
 function isPayoutStakers(call: any): boolean {
   return call.method == "payoutStakers";
@@ -79,7 +76,11 @@ export async function handleReward(rewardEvent: SubstrateEvent): Promise<void> {
     RewardType.reward,
     accumulatedReward.amount,
   );
-  await saveMultiStakingReward(rewardEvent, RewardType.reward, STAKING_TYPE_RELAYCHAIN);
+  await saveMultiStakingReward(
+    rewardEvent,
+    RewardType.reward,
+    STAKING_TYPE_RELAYCHAIN,
+  );
 }
 
 async function handleRewardForTxHistory(
@@ -226,7 +227,11 @@ export async function handleSlash(slashEvent: SubstrateEvent): Promise<void> {
     RewardType.slash,
     accumulatedReward.amount,
   );
-  await saveMultiStakingReward(slashEvent, RewardType.slash, STAKING_TYPE_RELAYCHAIN);
+  await saveMultiStakingReward(
+    slashEvent,
+    RewardType.slash,
+    STAKING_TYPE_RELAYCHAIN,
+  );
 }
 
 async function getValidators(era: number): Promise<Set<string>> {

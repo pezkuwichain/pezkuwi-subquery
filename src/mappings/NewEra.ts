@@ -234,12 +234,11 @@ async function updateStakingApyAndActiveStakers(
 
   // 2. Get validator commissions
   const validatorAddresses = validatorExposures.map((v) => v.address);
-  const validatorPrefs = await api.query.staking.validators.multi(
-    validatorAddresses,
-  );
+  const validatorPrefs =
+    await api.query.staking.validators.multi(validatorAddresses);
 
-  const validatorsWithCommission: ValidatorAPYData[] =
-    validatorExposures.map((v, i) => {
+  const validatorsWithCommission: ValidatorAPYData[] = validatorExposures.map(
+    (v, i) => {
       const prefs = validatorPrefs[i] as any;
       const commissionPerbill = prefs.commission
         ? Number(prefs.commission.toString())
@@ -248,7 +247,8 @@ async function updateStakingApyAndActiveStakers(
         totalStake: v.total,
         commission: commissionPerbill / PERBILL_DIVISOR,
       };
-    });
+    },
+  );
 
   // 3. Calculate maxAPY
   const maxAPY = calculateMaxAPY(totalIssuance, validatorsWithCommission);
@@ -284,7 +284,9 @@ async function updateStakingApyAndActiveStakers(
   await ahPoolApy.save();
 
   logger.info(
-    `Era ${currentEra}: maxAPY=${(maxAPY * 100).toFixed(2)}% validators=${validatorExposures.length} totalIssuance=${totalIssuance}`,
+    `Era ${currentEra}: maxAPY=${(maxAPY * 100).toFixed(2)}% validators=${
+      validatorExposures.length
+    } totalIssuance=${totalIssuance}`,
   );
 
   // 7. Collect all unique nominator addresses from exposures (active stakers)

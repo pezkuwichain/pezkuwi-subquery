@@ -62,7 +62,9 @@ async function createTransfer(
   await element.save();
 }
 
-export async function handleAssetTransfer(event: SubstrateEvent): Promise<void> {
+export async function handleAssetTransfer(
+  event: SubstrateEvent,
+): Promise<void> {
   const [assetId, from, to, amount] = getEventData(event);
 
   const assetTransferData: AssetTransfer = {
@@ -75,8 +77,18 @@ export async function handleAssetTransfer(event: SubstrateEvent): Promise<void> 
     success: true,
   };
 
-  await createAssetTransferHistory(event, from.toString(), "-from", assetTransferData);
-  await createAssetTransferHistory(event, to.toString(), "-to", assetTransferData);
+  await createAssetTransferHistory(
+    event,
+    from.toString(),
+    "-from",
+    assetTransferData,
+  );
+  await createAssetTransferHistory(
+    event,
+    to.toString(),
+    "-to",
+    assetTransferData,
+  );
 }
 
 async function createAssetTransferHistory(
