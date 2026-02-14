@@ -15,6 +15,7 @@ RUN npm init -y && \
     @polkadot/types-known@npm:@pezkuwi/types-known@^16.5.36 \
     @polkadot/rpc-core@npm:@pezkuwi/rpc-core@^16.5.36 \
     @polkadot/rpc-provider@npm:@pezkuwi/rpc-provider@^16.5.36 \
+    @polkadot/rpc-augment@npm:@pezkuwi/rpc-augment@^16.5.36 \
     @polkadot/util@npm:@pezkuwi/util@^14.0.25 \
     @polkadot/util-crypto@npm:@pezkuwi/util-crypto@^14.0.25 \
     @polkadot/keyring@npm:@pezkuwi/keyring@^14.0.25 \
@@ -25,5 +26,11 @@ RUN npm init -y && \
     @polkadot/wasm-bridge@npm:@pezkuwi/wasm-bridge@^7.5.17 \
     @polkadot/wasm-crypto-asmjs@npm:@pezkuwi/wasm-crypto-asmjs@^7.5.17 \
     @polkadot/wasm-crypto-init@npm:@pezkuwi/wasm-crypto-init@^7.5.17
+
+# @subql/node requires '@polkadot/api-augment/substrate' but @pezkuwi uses
+# chain-specific paths (./pezkuwi, ./bizinikiwi). Create a substrate shim
+# that re-exports the pezkuwi augmentation.
+RUN mkdir -p /app/node_modules/@polkadot/api-augment/substrate && \
+    echo "require('../cjs/pezkuwi/index.js');" > /app/node_modules/@polkadot/api-augment/substrate/index.js
 
 ENTRYPOINT ["/app/node_modules/.bin/subql-node"]
