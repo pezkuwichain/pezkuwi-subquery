@@ -28,9 +28,17 @@ RUN npm init -y && \
     @polkadot/wasm-crypto-init@npm:@pezkuwi/wasm-crypto-init@^7.5.17
 
 # @subql/node requires '@polkadot/api-augment/substrate' but @pezkuwi uses
-# chain-specific paths (./pezkuwi, ./bizinikiwi). Create a substrate shim
-# that re-exports the pezkuwi augmentation.
-RUN mkdir -p /app/node_modules/@polkadot/api-augment/substrate && \
-    echo "require('../cjs/pezkuwi/index.js');" > /app/node_modules/@polkadot/api-augment/substrate/index.js
+# chain-specific paths (./pezkuwi, ./bizinikiwi). Patch the exports map in
+# package.json to add ./substrate pointing to pezkuwi augmentation.
+RUN node -e " \
+  const fs = require('fs'); \
+  const p = '/app/node_modules/@polkadot/api-augment/package.json'; \
+  const pkg = JSON.parse(fs.readFileSync(p, 'utf8')); \
+  pkg.exports['./substrate'] = { \
+    require: './cjs/pezkuwi/index.js', \
+    default: './pezkuwi/index.js' \
+  }; \
+  fs.writeFileSync(p, JSON.stringify(pkg, null, 2)); \
+"
 
 ENTRYPOINT ["/app/node_modules/.bin/subql-node"]
