@@ -26,6 +26,7 @@ services:
       postgres: { condition: service_healthy }
     restart: always
     environment:
+      TZ: UTC
       DB_USER: postgres
       DB_PASS: pezkuwi_subquery_2024
       DB_DATABASE: postgres
@@ -48,6 +49,7 @@ services:
       postgres: { condition: service_healthy }
     restart: always
     environment:
+      TZ: UTC
       DB_USER: postgres
       DB_PASS: pezkuwi_subquery_2024
       DB_DATABASE: postgres
