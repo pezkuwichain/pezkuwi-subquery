@@ -13,7 +13,7 @@ repository: https://github.com/pezkuwichain/pezkuwi-subquery
 schema:
   file: ./schema.graphql
 network:
-  chainId: "0xbb4a61ab0c4b8c12f5eab71d0c86c482e03a275ecdafee678dea712474d33d75"
+  chainId: "0x1aa94987791a5544e9667ec249d2cef1b8fdd6083c85b93fc37892d54a1156ca"
   endpoint:
     - wss://rpc.pezkuwichain.io
     - wss://mainnet.pezkuwichain.io
@@ -22,7 +22,7 @@ network:
 dataSources:
   - name: main
     kind: substrate/Runtime
-    startBlock: 199000
+    startBlock: 1
     mapping:
       file: ./dist/index.js
       handlers:

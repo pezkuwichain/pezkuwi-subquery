@@ -1,8 +1,8 @@
 // Pezkuwi chain genesis hashes (with 0x prefix, as the app expects)
 export const PEZKUWI_RELAY_GENESIS =
-  "0xbb4a61ab0c4b8c12f5eab71d0c86c482e03a275ecdafee678dea712474d33d75";
+  "0x1aa94987791a5544e9667ec249d2cef1b8fdd6083c85b93fc37892d54a1156ca";
 export const PEZKUWI_ASSET_HUB_GENESIS =
-  "0x00d0e1d0581c3cd5c5768652d52f4520184018b44f56a2ae1e0dc9d65c00c948";
+  "0xe7c15092dcbe3f320260ddbbc685bfceed9125a3b3d8436db2766201dec3b949";
 
 // Staking type identifiers (must match the app's mapStakingTypeToSubQueryId)
 export const STAKING_TYPE_RELAYCHAIN = "relaychain";
