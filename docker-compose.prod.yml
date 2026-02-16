@@ -95,9 +95,9 @@ services:
       - noter_mnemonic
     environment:
       TZ: UTC
-      RELAY_RPC: ws://host.docker.internal:9944
-      ASSET_HUB_RPC: ws://host.docker.internal:40944
-      PEOPLE_RPC: ws://host.docker.internal:41944
+      RELAY_RPC: ws://217.77.6.126:9944
+      ASSET_HUB_RPC: ws://217.77.6.126:40944
+      PEOPLE_RPC: ws://217.77.6.126:41944
       SCAN_INTERVAL_MS: "300000"
 
 secrets:
