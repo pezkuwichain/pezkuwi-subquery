@@ -1,0 +1,16 @@
+{
+  "name": "pezkuwi-noter-bot",
+  "version": "1.0.0",
+  "description": "Noter bot: collects staking data from Relay Chain / Asset Hub and submits to People Chain",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node --watch bot.js"
+  },
+  "dependencies": {
+    "@pezkuwi/api": "^16.5.36",
+    "@pezkuwi/keyring": "^14.0.25",
+    "@pezkuwi/util": "^14.0.25",
+    "@pezkuwi/util-crypto": "^14.0.25"
+  }
+}

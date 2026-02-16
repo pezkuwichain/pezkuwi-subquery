@@ -83,5 +83,26 @@ services:
       - --playground
       - --indexer=http://subquery-node-relay:3000
 
+  noter-bot:
+    container_name: noter-pezkuwi
+    build:
+      context: ./noter
+      dockerfile: Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: unless-stopped
+    secrets:
+      - noter_mnemonic
+    environment:
+      TZ: UTC
+      RELAY_RPC: ws://host.docker.internal:9944
+      ASSET_HUB_RPC: ws://host.docker.internal:40944
+      PEOPLE_RPC: ws://host.docker.internal:41944
+      SCAN_INTERVAL_MS: "300000"
+
+secrets:
+  noter_mnemonic:
+    file: ./secrets/noter_mnemonic.txt
+
 volumes:
   pgdata:
