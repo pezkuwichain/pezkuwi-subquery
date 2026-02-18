@@ -101,6 +101,48 @@ services:
       - --playground
       - --indexer=http://subquery-node-assethub:3000
 
+  subquery-node-governance:
+    container_name: node-pezkuwi-governance
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: always
+    environment:
+      TZ: UTC
+      DB_USER: postgres
+      DB_PASS: pezkuwi_subquery_2024
+      DB_DATABASE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+    volumes:
+      - ./:/app/project
+    command:
+      - -f=/app/project/pezkuwi-governance.yaml
+      - --db-schema=subquery-pezkuwi-governance
+      - --disable-historical=true
+      - --batch-size=30
+
+  graphql-engine-governance:
+    container_name: query-pezkuwi-gov
+    image: onfinality/subql-query:v1.5.0
+    ports:
+      - 3002:3000
+    depends_on:
+      - subquery-node-governance
+    restart: always
+    environment:
+      DB_USER: postgres
+      DB_PASS: pezkuwi_subquery_2024
+      DB_DATABASE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+    command:
+      - --name=subquery-pezkuwi-governance
+      - --playground
+      - --indexer=http://subquery-node-governance:3000
+
   noter-bot:
     container_name: noter-pezkuwi
     build:

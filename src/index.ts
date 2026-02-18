@@ -5,4 +5,5 @@ export * from "./mappings/PoolRewards";
 export * from "./mappings/Transfers";
 export * from "./mappings/NewEra";
 export * from "./mappings/PoolStakers";
+export * from "./mappings/Governance";
 import "@pezkuwi/api-augment";

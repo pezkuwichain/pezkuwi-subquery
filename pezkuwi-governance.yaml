@@ -1,0 +1,62 @@
+specVersion: 1.0.0
+name: subquery-pezkuwi-governance
+version: 1.0.0
+runner:
+  node:
+    name: "@subql/node"
+    version: ">=4.6.6"
+  query:
+    name: "@subql/query"
+    version: "*"
+description: Pezkuwi Governance SubQuery - OpenGov referenda, votes, delegations for PezWallet
+repository: https://github.com/pezkuwichain/pezkuwi-subquery
+schema:
+  file: ./schema.graphql
+network:
+  chainId: "0x1aa94987791a5544e9667ec249d2cef1b8fdd6083c85b93fc37892d54a1156ca"
+  endpoint:
+    - wss://rpc.pezkuwichain.io
+    - wss://mainnet.pezkuwichain.io
+  chaintypes:
+    file: ./chainTypes/pezkuwi.json
+dataSources:
+  - name: governance
+    kind: substrate/Runtime
+    startBlock: 1
+    mapping:
+      file: ./dist/index.js
+      handlers:
+        # Referendum lifecycle
+        - handler: handleReferendumSubmitted
+          kind: substrate/EventHandler
+          filter:
+            module: referenda
+            method: Submitted
+        # Direct vote on referendum
+        - handler: handleVoteCall
+          kind: substrate/CallHandler
+          filter:
+            module: convictionVoting
+            method: vote
+            success: true
+        # Remove vote from referendum
+        - handler: handleRemoveVoteCall
+          kind: substrate/CallHandler
+          filter:
+            module: convictionVoting
+            method: removeVote
+            success: true
+        # Delegate voting power
+        - handler: handleDelegateCall
+          kind: substrate/CallHandler
+          filter:
+            module: convictionVoting
+            method: delegate
+            success: true
+        # Remove delegation
+        - handler: handleUndelegateCall
+          kind: substrate/CallHandler
+          filter:
+            module: convictionVoting
+            method: undelegate
+            success: true

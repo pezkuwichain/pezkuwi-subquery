@@ -2,7 +2,7 @@
   "name": "subquery-pezkuwi",
   "version": "1.0.0",
   "packageManager": "yarn@4.12.0",
-  "description": "Pezkuwi SubQuery - Staking rewards, NominationPools, transfers indexer for PezWallet",
+  "description": "Pezkuwi SubQuery - Staking, governance, NominationPools, transfers indexer for PezWallet",
   "main": "dist/index.js",
   "scripts": {
     "build": "./node_modules/.bin/subql build",
@@ -15,7 +15,8 @@
     "dist",
     "schema.graphql",
     "pezkuwi.yaml",
-    "pezkuwi-assethub.yaml"
+    "pezkuwi-assethub.yaml",
+    "pezkuwi-governance.yaml"
   ],
   "author": "Pezkuwi Team",
   "license": "Apache-2.0",

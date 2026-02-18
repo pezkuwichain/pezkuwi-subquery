@@ -150,3 +150,72 @@ type Reward @entity {
   timestamp: BigInt!
   blockNumber: Int! @index
 }
+
+# ===== Governance — Dijital Kurdistan OpenGov v2 =====
+
+type VoteBalance @jsonField {
+  amount: String!
+  conviction: String!
+}
+
+type StandardVote @jsonField {
+  aye: Boolean!
+  vote: VoteBalance!
+}
+
+type SplitVote @jsonField {
+  ayeAmount: String!
+  nayAmount: String!
+}
+
+type SplitAbstainVote @jsonField {
+  ayeAmount: String!
+  nayAmount: String!
+  abstainAmount: String!
+}
+
+type Referendum @entity {
+  id: ID! # referendumIndex as string
+  trackId: Int! @index
+}
+
+type CastingVoting @entity {
+  id: ID! # referendumId-voter
+  referendum: Referendum!
+  voter: String! @index
+  delegateId: String @index
+  standardVote: StandardVote
+  splitVote: SplitVote
+  splitAbstainVote: SplitAbstainVote
+  at: Int! @index
+  timestamp: BigInt
+}
+
+type DelegatorVoting @entity {
+  id: ID! # parentId-delegator
+  parent: CastingVoting!
+  delegator: String! @index
+  vote: VoteBalance
+}
+
+type Delegation @entity {
+  id: ID! # delegator-trackId
+  delegateId: String! @index
+  delegator: String! @index
+  trackId: Int! @index
+  delegation: VoteBalance
+}
+
+type Delegate @entity {
+  id: ID! # accountId hex
+  accountId: String! @index
+  delegators: Int!
+  delegatorVotes: BigInt!
+}
+
+type DelegateVote @entity {
+  id: ID! # delegateId-referendumId
+  delegate: Delegate!
+  at: Int! @index
+  timestamp: BigInt
+}
