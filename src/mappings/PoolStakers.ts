@@ -168,8 +168,16 @@ function calculateYearlyInflation(stakedPortion: number): number {
 }
 
 async function computeAndSaveAPY(): Promise<void> {
-  const totalIssuance = ((await api.query.balances.totalIssuance()) as any).toBigInt();
-  if (totalIssuance === BigInt(0)) return;
+  // Total issuance must come from the relay chain (200M+ HEZ), not AH (7M HEZ).
+  // AH's balances.totalIssuance only reflects tokens teleported to AH.
+  // We use staking.erasTotalStake as a proxy: totalStaked is known, and we
+  // can derive totalIssuance from relay's staking.erasValidatorReward ratio.
+  // But simplest: read relay's totalIssuance via the staking pallet's
+  // erasValidatorReward / erasRewardPoints to approximate, OR use a known
+  // total supply constant.
+  //
+  // Pezkuwi total supply ~200M HEZ. For accurate APY we use this.
+  const TOTAL_SUPPLY = BigInt("200004200000000000000"); // ~200M HEZ in planck
 
   const activeEraOpt = (await api.query.staking.activeEra()) as Option<any>;
   if (activeEraOpt.isNone) return;
@@ -199,9 +207,9 @@ async function computeAndSaveAPY(): Promise<void> {
     validators[i].commission = p.commission ? Number(p.commission.toString()) / PERBILL_DIVISOR : 0;
   }
 
-  // Calculate APY
+  // Calculate APY using relay total supply
   const SCALE = BigInt(1_000_000_000);
-  const stakedPortion = Number((totalStaked * SCALE) / totalIssuance) / Number(SCALE);
+  const stakedPortion = Number((totalStaked * SCALE) / TOTAL_SUPPLY) / Number(SCALE);
   const yearlyInflation = calculateYearlyInflation(stakedPortion);
   const avgRewardPct = yearlyInflation / stakedPortion;
   const avgStake = totalStaked / BigInt(validators.length);
@@ -222,7 +230,7 @@ async function computeAndSaveAPY(): Promise<void> {
   const ahPoolApyId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_NOMINATION_POOL}`;
   await StakingApy.create({ id: ahPoolApyId, networkId: PEZKUWI_ASSET_HUB_GENESIS, stakingType: STAKING_TYPE_NOMINATION_POOL, maxAPY }).save();
 
-  logger.info(`AH APY: ${(maxAPY * 100).toFixed(2)}% from ${validators.length} validators, era ${currentEra}`);
+  logger.info(`AH APY: ${(maxAPY * 100).toFixed(2)}% from ${validators.length} validators, era ${currentEra}, stakedPortion=${(stakedPortion*100).toFixed(2)}%`);
 }
 
 /**
