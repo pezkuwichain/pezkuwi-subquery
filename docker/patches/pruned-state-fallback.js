@@ -1,5 +1,5 @@
 /**
- * Patch @subql/node to handle pruned blockchain state.
+ * Patch @subql/node and @polkadot/api to handle pruned blockchain state.
  *
  * Problem: Substrate nodes prune historical state by default (~256 blocks).
  * When SubQuery restarts and tries to fetch runtime version for old blocks,
@@ -11,44 +11,51 @@
  * This is safe for chains with infrequent spec upgrades.
  */
 const fs = require("fs");
+let count = 0;
 
-// --- Patch 1: base-runtime.service.js ---
-// Handles getSpecFromApi() and getRuntimeVersion() which call
+// --- Patch 1: @subql/node base-runtime.service.js ---
+// getSpecFromApi() and getRuntimeVersion() call
 // this.api.rpc.state.getRuntimeVersion(parentBlockHash)
 const runtimeFile =
   "/app/node_modules/@subql/node/dist/indexer/runtime/base-runtime.service.js";
 let runtimeCode = fs.readFileSync(runtimeFile, "utf8");
-
-const runtimeMatches = (
-  runtimeCode.match(
-    /await this\.api\.rpc\.state\.getRuntimeVersion\(\w+\)/g
-  ) || []
-).length;
-
 runtimeCode = runtimeCode.replace(
   /await this\.api\.rpc\.state\.getRuntimeVersion\((\w+)\)/g,
-  "await this.api.rpc.state.getRuntimeVersion($1).catch(() => this.api.rpc.state.getRuntimeVersion())"
+  (m, v) => { count++; return `await this.api.rpc.state.getRuntimeVersion(${v}).catch(() => this.api.rpc.state.getRuntimeVersion())`; }
 );
 fs.writeFileSync(runtimeFile, runtimeCode);
-console.log(`Patched base-runtime.service.js (${runtimeMatches} call sites)`);
+console.log(`[1/4] base-runtime.service.js: ${count} patches`);
 
-// --- Patch 2: utils/substrate.js ---
-// Handles fetchRuntimeVersionRange() which calls
-// api.rpc.state.getRuntimeVersion(hash).catch((e) => { throw ... })
+// --- Patch 2: @subql/node utils/substrate.js ---
+// fetchRuntimeVersionRange() catches and rethrows; add fallback before rethrow
+count = 0;
 const utilsFile =
   "/app/node_modules/@subql/node/dist/utils/substrate.js";
 let utilsCode = fs.readFileSync(utilsFile, "utf8");
-
-const utilsBefore = utilsCode.includes("getRuntimeVersion(hash).catch((e)");
-
-// Insert a fallback .catch before the existing error handler:
-// Original: getRuntimeVersion(hash).catch((e) => { throw... })
-// Patched:  getRuntimeVersion(hash).catch(() => getRuntimeVersion()).catch((e) => { throw... })
 utilsCode = utilsCode.replace(
   /api\.rpc\.state\.getRuntimeVersion\(hash\)\.catch\(\(e\)/g,
-  "api.rpc.state.getRuntimeVersion(hash).catch(() => api.rpc.state.getRuntimeVersion()).catch((e)"
+  () => { count++; return "api.rpc.state.getRuntimeVersion(hash).catch(() => api.rpc.state.getRuntimeVersion()).catch((e)"; }
 );
 fs.writeFileSync(utilsFile, utilsCode);
-console.log(`Patched utils/substrate.js (had target: ${utilsBefore})`);
+console.log(`[2/4] utils/substrate.js: ${count} patches`);
 
-console.log("All pruned-state patches applied.");
+// --- Patch 3: @polkadot/api Init.js ---
+// _getBlockRegistryViaHash calls getRuntimeVersion.raw(header.parentHash)
+// which fails when parentHash points to a pruned block (including genesis).
+count = 0;
+const initFile =
+  "/app/node_modules/@polkadot/api/cjs/base/Init.js";
+let initCode = fs.readFileSync(initFile, "utf8");
+initCode = initCode.replace(
+  /await \(0, rxjs_1\.firstValueFrom\)\(this\._rpcCore\.state\.getRuntimeVersion\.raw\(header\.parentHash\)\)/g,
+  () => { count++; return "await (0, rxjs_1.firstValueFrom)(this._rpcCore.state.getRuntimeVersion.raw(header.parentHash)).catch(() => (0, rxjs_1.firstValueFrom)(this._rpcCore.state.getRuntimeVersion()))"; }
+);
+fs.writeFileSync(initFile, initCode);
+console.log(`[3/4] @polkadot/api Init.js: ${count} patches`);
+
+// --- Patch 4: @polkadot/api events.js (system.events.at) ---
+// fetchEventsRange calls api.query.system.events.at(hash) which may also fail
+// for pruned blocks. Not patching this as it's a data fetch, not startup blocker.
+// SubQuery will retry or skip those blocks.
+
+console.log("[4/4] All pruned-state patches applied successfully.");
