@@ -15,17 +15,24 @@ let poolStakersInitialized = false;
  */
 function derivePoolStash(poolId: number): string {
   const buf = new Uint8Array(32);
+  // Substrate's PalletId::into_sub_account_truncating:
+  // "modl" (4 bytes) + PalletId (8 bytes) + sub_account encoding
+  // "modl" prefix
+  buf[0] = 0x6d; // m
+  buf[1] = 0x6f; // o
+  buf[2] = 0x64; // d
+  buf[3] = 0x6c; // l
   // PalletId: "py/nopls" (8 bytes)
   const palletId = [0x70, 0x79, 0x2f, 0x6e, 0x6f, 0x70, 0x6c, 0x73];
-  for (let i = 0; i < 8; i++) buf[i] = palletId[i];
+  for (let i = 0; i < 8; i++) buf[4 + i] = palletId[i];
   // AccountType::Bonded = 0
-  buf[8] = 0;
+  buf[12] = 0;
   // Pool ID as u32 LE
-  buf[9] = poolId & 0xff;
-  buf[10] = (poolId >> 8) & 0xff;
-  buf[11] = (poolId >> 16) & 0xff;
-  buf[12] = (poolId >> 24) & 0xff;
-  // Remaining bytes are already 0 (padding)
+  buf[13] = poolId & 0xff;
+  buf[14] = (poolId >> 8) & 0xff;
+  buf[15] = (poolId >> 16) & 0xff;
+  buf[16] = (poolId >> 24) & 0xff;
+  // Remaining bytes are already 0 (padding to 32 bytes)
   // Convert to hex string - createType doesn't accept Uint8Array directly
   let hex = "0x";
   for (let i = 0; i < 32; i++) {
