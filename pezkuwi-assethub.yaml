@@ -23,6 +23,9 @@ dataSources:
     mapping:
       file: ./dist/index.js
       handlers:
+        # Block handler: initialize active pool stakers from chain state
+        - handler: handleBlock
+          kind: substrate/BlockHandler
         # Signed extrinsics for history
         - handler: handleHistoryElement
           kind: substrate/CallHandler

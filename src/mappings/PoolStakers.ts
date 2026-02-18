@@ -1,10 +1,50 @@
-import { SubstrateEvent } from "@subql/types";
+import { SubstrateEvent, SubstrateBlock } from "@subql/types";
 import { ActiveStaker } from "../types";
 import { Option } from "@pezkuwi/types";
 import {
   PEZKUWI_ASSET_HUB_GENESIS,
   STAKING_TYPE_NOMINATION_POOL,
 } from "./constants";
+
+let poolMembersInitialized = false;
+
+/**
+ * Block handler: on the FIRST block processed, query the live chain state
+ * for all current nomination pool members and save them as ActiveStakers.
+ * This ensures existing pool members are captured even if their Bonded
+ * events were in pruned blocks.
+ */
+export async function handleBlock(block: SubstrateBlock): Promise<void> {
+  if (poolMembersInitialized) return;
+  poolMembersInitialized = true;
+
+  logger.info("Initializing active pool stakers from live chain state...");
+
+  const members = await api.query.nominationPools.poolMembers.entries();
+  let count = 0;
+
+  for (const [key, memberOpt] of members) {
+    const member = (memberOpt as Option<any>);
+    if (member.isNone) continue;
+
+    const unwrapped = member.unwrap();
+    if (unwrapped.points.toBigInt() === BigInt(0)) continue;
+
+    const address = key.args[0].toString();
+    const stakerId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_NOMINATION_POOL}-${address}`;
+
+    const staker = ActiveStaker.create({
+      id: stakerId,
+      networkId: PEZKUWI_ASSET_HUB_GENESIS,
+      stakingType: STAKING_TYPE_NOMINATION_POOL,
+      address,
+    });
+    await staker.save();
+    count++;
+  }
+
+  logger.info(`Initialized ${count} active pool stakers from chain state`);
+}
 
 /**
  * Handle nominationPools.Bonded event
