@@ -34,6 +34,18 @@ dataSources:
           filter:
             module: nominationPools
             method: PaidOut
+        # Pool member bonded (track active stakers)
+        - handler: handlePoolBonded
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: Bonded
+        # Pool member unbonded (cleanup active stakers)
+        - handler: handlePoolUnbonded
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: Unbonded
         # Pool bonded slash
         - handler: handlePoolBondedSlash
           kind: substrate/EventHandler
