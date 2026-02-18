@@ -41,4 +41,9 @@ RUN node -e " \
   fs.writeFileSync(p, JSON.stringify(pkg, null, 2)); \
 "
 
+# Patch: handle pruned blockchain state gracefully.
+# Without this, SubQuery crashes when RPC nodes have pruned old block state.
+COPY docker/patches/pruned-state-fallback.js /tmp/pruned-state-fallback.js
+RUN node /tmp/pruned-state-fallback.js && rm /tmp/pruned-state-fallback.js
+
 ENTRYPOINT ["/app/node_modules/.bin/subql-node"]
