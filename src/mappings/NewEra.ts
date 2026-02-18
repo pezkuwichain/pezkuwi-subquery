@@ -41,7 +41,14 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
   const activeNominators = new Set<string>();
   const activeValidators = new Set<string>();
 
-  // Read all paged exposure entries for current era
+  // Read all validators from overview (includes validators with only self-stake)
+  const overviews = await api.query.staking.erasStakersOverview.entries(currentEra);
+  for (const [key, ov] of overviews) {
+    const [, validatorId] = key.args;
+    activeValidators.add(validatorId.toString());
+  }
+
+  // Read all paged exposure entries for current era (contains nominators)
   const pages = await api.query.staking.erasStakersPaged.entries(currentEra);
   for (const [key, exp] of pages) {
     const [, validatorId] = key.args;
@@ -49,12 +56,10 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
 
     let exposure: any;
     try {
-      // Try as Option first (some runtimes wrap it)
       const asOpt = exp as Option<any>;
       if (asOpt.isNone) continue;
       exposure = asOpt.unwrap();
     } catch {
-      // Direct value (not wrapped in Option)
       exposure = exp as any;
     }
 
@@ -65,7 +70,7 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
     }
   }
 
-  // If paged API had no results, try legacy erasStakersClipped
+  // Fallback: if overview had no results, try legacy erasStakersClipped
   if (activeValidators.size === 0) {
     const clipped = await api.query.staking.erasStakersClipped.entries(currentEra);
     for (const [key, exposure] of clipped) {
