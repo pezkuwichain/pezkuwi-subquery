@@ -123,7 +123,9 @@ async function propagateVoteToDelegators(
   cv: CastingVoting,
   referendumId: string,
 ): Promise<void> {
-  const delegations = await Delegation.getByDelegateId(delegateAddress, { limit: 500 });
+  const delegations = await Delegation.getByDelegateId(delegateAddress, {
+    limit: 500,
+  });
   if (!delegations || delegations.length === 0) return;
 
   const referendum = await Referendum.get(referendumId);
@@ -146,7 +148,9 @@ async function propagateVoteToDelegators(
 async function createDelegatorVotingsForNewDelegation(
   delegation: Delegation,
 ): Promise<void> {
-  const cvList = await CastingVoting.getByVoter(delegation.delegateId, { limit: 500 });
+  const cvList = await CastingVoting.getByVoter(delegation.delegateId, {
+    limit: 500,
+  });
   if (!cvList || cvList.length === 0) return;
 
   for (const cv of cvList) {

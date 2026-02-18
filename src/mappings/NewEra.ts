@@ -42,7 +42,8 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
   const activeValidators = new Set<string>();
 
   // Read all validators from overview (includes validators with only self-stake)
-  const overviews = await api.query.staking.erasStakersOverview.entries(currentEra);
+  const overviews =
+    await api.query.staking.erasStakersOverview.entries(currentEra);
   for (const [key, ov] of overviews) {
     const [, validatorId] = key.args;
     activeValidators.add(validatorId.toString());
@@ -72,7 +73,8 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
 
   // Fallback: if overview had no results, try legacy erasStakersClipped
   if (activeValidators.size === 0) {
-    const clipped = await api.query.staking.erasStakersClipped.entries(currentEra);
+    const clipped =
+      await api.query.staking.erasStakersClipped.entries(currentEra);
     for (const [key, exposure] of clipped) {
       const [, validatorId] = key.args;
       activeValidators.add(validatorId.toString());
