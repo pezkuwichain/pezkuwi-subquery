@@ -1,4 +1,4 @@
-import { SubstrateEvent } from "@subql/types";
+import { SubstrateEvent, SubstrateBlock } from "@subql/types";
 import { eventId } from "./common";
 import { EraValidatorInfo, StakingApy, ActiveStaker } from "../types";
 import { IndividualExposure } from "../types";
@@ -15,6 +15,97 @@ import {
   INFLATION_STAKE_TARGET,
   PERBILL_DIVISOR,
 } from "./constants";
+
+let relayStakersInitialized = false;
+
+/**
+ * Block handler: on the FIRST block processed, query the live chain state
+ * for all current era's elected nominators and validators, then save them
+ * as ActiveStakers. This ensures existing stakers are captured even if
+ * StakersElected events were missed or had parsing issues.
+ */
+export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
+  if (relayStakersInitialized) return;
+  relayStakersInitialized = true;
+
+  logger.info("Initializing active relay stakers from live chain state...");
+
+  const activeEraOpt = (await api.query.staking.activeEra()) as Option<any>;
+  if (activeEraOpt.isNone) {
+    logger.info("No active era found on relay chain");
+    return;
+  }
+  const currentEra = activeEraOpt.unwrap().index.toNumber();
+  logger.info(`Current active era: ${currentEra}`);
+
+  const activeNominators = new Set<string>();
+  const activeValidators = new Set<string>();
+
+  // Read all paged exposure entries for current era
+  const pages = await api.query.staking.erasStakersPaged.entries(currentEra);
+  for (const [key, exp] of pages) {
+    const [, validatorId] = key.args;
+    activeValidators.add(validatorId.toString());
+
+    let exposure: any;
+    try {
+      // Try as Option first (some runtimes wrap it)
+      const asOpt = exp as Option<any>;
+      if (asOpt.isNone) continue;
+      exposure = asOpt.unwrap();
+    } catch {
+      // Direct value (not wrapped in Option)
+      exposure = exp as any;
+    }
+
+    if (exposure.others) {
+      for (const other of exposure.others) {
+        activeNominators.add(other.who.toString());
+      }
+    }
+  }
+
+  // If paged API had no results, try legacy erasStakersClipped
+  if (activeValidators.size === 0) {
+    const clipped = await api.query.staking.erasStakersClipped.entries(currentEra);
+    for (const [key, exposure] of clipped) {
+      const [, validatorId] = key.args;
+      activeValidators.add(validatorId.toString());
+      const exp = exposure as unknown as Exposure;
+      for (const other of exp.others) {
+        activeNominators.add(other.who.toString());
+      }
+    }
+  }
+
+  // Save validators as active stakers
+  for (const address of activeValidators) {
+    const stakerId = `${PEZKUWI_RELAY_GENESIS}-${STAKING_TYPE_RELAYCHAIN}-${address}`;
+    const staker = ActiveStaker.create({
+      id: stakerId,
+      networkId: PEZKUWI_RELAY_GENESIS,
+      stakingType: STAKING_TYPE_RELAYCHAIN,
+      address,
+    });
+    await staker.save();
+  }
+
+  // Save nominators as active stakers
+  for (const address of activeNominators) {
+    const stakerId = `${PEZKUWI_RELAY_GENESIS}-${STAKING_TYPE_RELAYCHAIN}-${address}`;
+    const staker = ActiveStaker.create({
+      id: stakerId,
+      networkId: PEZKUWI_RELAY_GENESIS,
+      stakingType: STAKING_TYPE_RELAYCHAIN,
+      address,
+    });
+    await staker.save();
+  }
+
+  logger.info(
+    `Initialized ${activeValidators.size} validators + ${activeNominators.size} nominators as active relay stakers`,
+  );
+}
 
 export async function handleStakersElected(
   event: SubstrateEvent,

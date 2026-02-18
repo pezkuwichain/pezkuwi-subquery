@@ -26,6 +26,9 @@ dataSources:
     mapping:
       file: ./dist/index.js
       handlers:
+        # Block handler: initialize active relay stakers from chain state
+        - handler: handleRelayBlock
+          kind: substrate/BlockHandler
         # Signed extrinsics for history
         - handler: handleHistoryElement
           kind: substrate/CallHandler
