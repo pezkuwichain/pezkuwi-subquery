@@ -1,9 +1,15 @@
 import { SubstrateEvent, SubstrateBlock } from "@subql/types";
-import { ActiveStaker } from "../types";
+import { ActiveStaker, StakingApy } from "../types";
 import { Option } from "@pezkuwi/types";
 import {
   PEZKUWI_ASSET_HUB_GENESIS,
   STAKING_TYPE_RELAYCHAIN,
+  STAKING_TYPE_NOMINATION_POOL,
+  INFLATION_FALLOFF,
+  INFLATION_MAX,
+  INFLATION_MIN,
+  INFLATION_STAKE_TARGET,
+  PERBILL_DIVISOR,
 } from "./constants";
 
 let poolStakersInitialized = false;
@@ -81,6 +87,9 @@ export async function handleBlock(block: SubstrateBlock): Promise<void> {
   }
 
   logger.info(`Initialized ${count} pool stash accounts as active stakers`);
+
+  // Also compute and save APY on first block
+  await computeAndSaveAPY();
 }
 
 /**
@@ -143,4 +152,89 @@ export async function handlePoolUnbonded(
     await ActiveStaker.remove(stakerId);
     logger.info(`Pool ${poolId} stash removed: ${stashAddress}`);
   }
+}
+
+// ===== APY Computation for Asset Hub =====
+
+function calculateYearlyInflation(stakedPortion: number): number {
+  const idealStake = INFLATION_STAKE_TARGET;
+  const idealInterest = INFLATION_MAX / idealStake;
+  if (stakedPortion >= 0 && stakedPortion <= idealStake) {
+    return INFLATION_MIN + stakedPortion * (idealInterest - INFLATION_MIN / idealStake);
+  } else {
+    return INFLATION_MIN + (idealInterest * idealStake - INFLATION_MIN) *
+      Math.pow(2, (idealStake - stakedPortion) / INFLATION_FALLOFF);
+  }
+}
+
+async function computeAndSaveAPY(): Promise<void> {
+  const totalIssuance = ((await api.query.balances.totalIssuance()) as any).toBigInt();
+  if (totalIssuance === BigInt(0)) return;
+
+  const activeEraOpt = (await api.query.staking.activeEra()) as Option<any>;
+  if (activeEraOpt.isNone) return;
+  const currentEra = activeEraOpt.unwrap().index.toNumber();
+
+  // Get all validator exposures for current era
+  const overviews = await api.query.staking.erasStakersOverview.entries(currentEra);
+  let totalStaked = BigInt(0);
+  const validators: { totalStake: bigint; commission: number }[] = [];
+  const validatorAddresses: string[] = [];
+
+  for (const [key, exp] of overviews) {
+    const [, validatorId] = key.args;
+    const exposure = (exp as Option<any>).unwrap();
+    const total = exposure.total.toBigInt();
+    totalStaked += total;
+    validatorAddresses.push(validatorId.toString());
+    validators.push({ totalStake: total, commission: 0 });
+  }
+
+  if (validators.length === 0 || totalStaked === BigInt(0)) return;
+
+  // Get commissions
+  const prefs = await api.query.staking.validators.multi(validatorAddresses);
+  for (let i = 0; i < prefs.length; i++) {
+    const p = prefs[i] as any;
+    validators[i].commission = p.commission ? Number(p.commission.toString()) / PERBILL_DIVISOR : 0;
+  }
+
+  // Calculate APY
+  const SCALE = BigInt(1_000_000_000);
+  const stakedPortion = Number((totalStaked * SCALE) / totalIssuance) / Number(SCALE);
+  const yearlyInflation = calculateYearlyInflation(stakedPortion);
+  const avgRewardPct = yearlyInflation / stakedPortion;
+  const avgStake = totalStaked / BigInt(validators.length);
+
+  let maxAPY = 0;
+  for (const v of validators) {
+    if (v.totalStake === BigInt(0)) continue;
+    const stakeRatio = Number((avgStake * SCALE) / v.totalStake) / Number(SCALE);
+    const apy = avgRewardPct * stakeRatio * (1 - v.commission);
+    if (apy > maxAPY) maxAPY = apy;
+  }
+
+  // Save APY for AH relaychain staking
+  const ahRelayApyId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_RELAYCHAIN}`;
+  await StakingApy.create({ id: ahRelayApyId, networkId: PEZKUWI_ASSET_HUB_GENESIS, stakingType: STAKING_TYPE_RELAYCHAIN, maxAPY }).save();
+
+  // Save APY for AH nomination-pool staking
+  const ahPoolApyId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_NOMINATION_POOL}`;
+  await StakingApy.create({ id: ahPoolApyId, networkId: PEZKUWI_ASSET_HUB_GENESIS, stakingType: STAKING_TYPE_NOMINATION_POOL, maxAPY }).save();
+
+  logger.info(`AH APY: ${(maxAPY * 100).toFixed(2)}% from ${validators.length} validators, era ${currentEra}`);
+}
+
+/**
+ * Handle staking.StakersElected on Asset Hub - recompute APY each era
+ */
+export async function handleAHStakersElected(event: SubstrateEvent): Promise<void> {
+  await computeAndSaveAPY();
+}
+
+/**
+ * Handle staking.StakingElection on Asset Hub (old format)
+ */
+export async function handleAHNewEra(event: SubstrateEvent): Promise<void> {
+  await computeAndSaveAPY();
 }

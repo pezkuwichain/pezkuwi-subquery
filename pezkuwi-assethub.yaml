@@ -61,6 +61,18 @@ dataSources:
           filter:
             module: nominationPools
             method: UnbondingPoolSlashed
+        # Era changes on AH (staking pallet lives here) - old format
+        - handler: handleAHNewEra
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: StakingElection
+        # Era changes on AH - new format (Polkadot 2.0)
+        - handler: handleAHStakersElected
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: StakersElected
         # Native transfers
         - handler: handleTransfer
           kind: substrate/EventHandler

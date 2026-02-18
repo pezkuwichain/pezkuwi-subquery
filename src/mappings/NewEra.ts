@@ -19,55 +19,6 @@ import {
 let relayStakersInitialized = false;
 
 /**
- * Derive pool bonded (stash) account for a given pool ID.
- * Matches Substrate: "modl" + PalletId("py/nopls") + AccountType::Bonded(0) + poolId(LE u32)
- * padded to 32 bytes.
- */
-function derivePoolStash(poolId: number): string {
-  const buf = new Uint8Array(32);
-  // "modl" prefix (4 bytes)
-  buf[0] = 0x6d; buf[1] = 0x6f; buf[2] = 0x64; buf[3] = 0x6c;
-  // PalletId: "py/nopls" (8 bytes)
-  const palletId = [0x70, 0x79, 0x2f, 0x6e, 0x6f, 0x70, 0x6c, 0x73];
-  for (let i = 0; i < 8; i++) buf[4 + i] = palletId[i];
-  // AccountType::Bonded = 0
-  buf[12] = 0;
-  // Pool ID as u32 LE
-  buf[13] = poolId & 0xff;
-  buf[14] = (poolId >> 8) & 0xff;
-  buf[15] = (poolId >> 16) & 0xff;
-  buf[16] = (poolId >> 24) & 0xff;
-  let hex = "0x";
-  for (let i = 0; i < 32; i++) hex += buf[i].toString(16).padStart(2, "0");
-  return api.registry.createType("AccountId", hex).toString();
-}
-
-/**
- * Save pool stash accounts that appear as active nominators on relay chain
- * as AH active stakers (networkId=AH, stakingType=relaychain).
- * The wallet queries these to determine ACTIVE status for nomination pools.
- */
-async function savePoolStashActiveStakers(activeNominators: Set<string>): Promise<number> {
-  const MAX_POOLS = 100;
-  let count = 0;
-  for (let poolId = 1; poolId <= MAX_POOLS; poolId++) {
-    const stash = derivePoolStash(poolId);
-    if (activeNominators.has(stash)) {
-      const stakerId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_RELAYCHAIN}-${stash}`;
-      const staker = ActiveStaker.create({
-        id: stakerId,
-        networkId: PEZKUWI_ASSET_HUB_GENESIS,
-        stakingType: STAKING_TYPE_RELAYCHAIN,
-        address: stash,
-      });
-      await staker.save();
-      count++;
-    }
-  }
-  return count;
-}
-
-/**
  * Block handler: on the FIRST block processed, query the live chain state
  * for all current era's elected nominators and validators, then save them
  * as ActiveStakers. This ensures existing stakers are captured even if
@@ -156,11 +107,8 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
     await staker.save();
   }
 
-  // Save pool stash accounts as AH active stakers
-  const poolCount = await savePoolStashActiveStakers(activeNominators);
-
   logger.info(
-    `Initialized ${activeValidators.size} validators + ${activeNominators.size} nominators as active relay stakers, ${poolCount} pool stash accounts as AH stakers`,
+    `Initialized ${activeValidators.size} validators + ${activeNominators.size} nominators as active relay stakers`,
   );
 }
 
@@ -470,10 +418,7 @@ async function updateStakingApyAndActiveStakers(
     await staker.save();
   }
 
-  // Save pool stash accounts as AH active stakers
-  const poolCount = await savePoolStashActiveStakers(activeNominators);
-
   logger.info(
-    `Era ${currentEra}: saved ${activeNominators.size} active stakers (relay), ${poolCount} pool stash accounts as AH stakers`,
+    `Era ${currentEra}: saved ${activeNominators.size} active stakers (relay)`,
   );
 }
