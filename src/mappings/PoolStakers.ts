@@ -168,16 +168,9 @@ function calculateYearlyInflation(stakedPortion: number): number {
 }
 
 async function computeAndSaveAPY(): Promise<void> {
-  // Total issuance must come from the relay chain (200M+ HEZ), not AH (7M HEZ).
-  // AH's balances.totalIssuance only reflects tokens teleported to AH.
-  // We use staking.erasTotalStake as a proxy: totalStaked is known, and we
-  // can derive totalIssuance from relay's staking.erasValidatorReward ratio.
-  // But simplest: read relay's totalIssuance via the staking pallet's
-  // erasValidatorReward / erasRewardPoints to approximate, OR use a known
-  // total supply constant.
-  //
-  // Pezkuwi total supply ~200M HEZ. For accurate APY we use this.
-  const TOTAL_SUPPLY = BigInt("200004200000000000000"); // ~200M HEZ in planck
+  // Use AH's own totalIssuance. AH staking pallet mints inflation from AH supply.
+  const TOTAL_SUPPLY = ((await api.query.balances.totalIssuance()) as any).toBigInt();
+  if (TOTAL_SUPPLY === BigInt(0)) return;
 
   const activeEraOpt = (await api.query.staking.activeEra()) as Option<any>;
   if (activeEraOpt.isNone) return;
@@ -214,9 +207,12 @@ async function computeAndSaveAPY(): Promise<void> {
   const avgRewardPct = yearlyInflation / stakedPortion;
   const avgStake = totalStaked / BigInt(validators.length);
 
+  // Compute per-validator APY, then take the max of validators with
+  // at least 10% of average stake (filters out tiny-stake outliers)
+  const minStake = avgStake / BigInt(10);
   let maxAPY = 0;
   for (const v of validators) {
-    if (v.totalStake === BigInt(0)) continue;
+    if (v.totalStake < minStake) continue;
     const stakeRatio = Number((avgStake * SCALE) / v.totalStake) / Number(SCALE);
     const apy = avgRewardPct * stakeRatio * (1 - v.commission);
     if (apy > maxAPY) maxAPY = apy;
