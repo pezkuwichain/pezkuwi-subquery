@@ -26,7 +26,12 @@ function derivePoolStash(poolId: number): string {
   buf[11] = (poolId >> 16) & 0xff;
   buf[12] = (poolId >> 24) & 0xff;
   // Remaining bytes are already 0 (padding)
-  return api.registry.createType("AccountId", buf).toString();
+  // Convert to hex string - createType doesn't accept Uint8Array directly
+  let hex = "0x";
+  for (let i = 0; i < 32; i++) {
+    hex += buf[i].toString(16).padStart(2, "0");
+  }
+  return api.registry.createType("AccountId", hex).toString();
 }
 
 /**
