@@ -16,6 +16,7 @@ jobs:
             cd /opt/subquery
             git pull origin main
             yarn install --frozen-lockfile
-            yarn build
+            ./node_modules/.bin/subql codegen pezkuwi-governance.yaml
+            ./node_modules/.bin/subql build pezkuwi.yaml
             docker compose -f docker-compose.prod.yml build
             docker compose -f docker-compose.prod.yml up -d
