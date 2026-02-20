@@ -170,6 +170,20 @@ function calculateYearlyInflation(stakedPortion: number): number {
 }
 
 async function computeAndSaveAPY(): Promise<void> {
+  // Safety: check staking pallet availability before querying
+  if (!api.query.staking || !api.query.staking.activeEra) {
+    logger.warn("Staking pallet not available on this chain - skipping APY computation");
+    return;
+  }
+
+  try {
+    await _computeAndSaveAPYInner();
+  } catch (e) {
+    logger.warn(`APY computation failed: ${e}`);
+  }
+}
+
+async function _computeAndSaveAPYInner(): Promise<void> {
   // Use AH's own totalIssuance. AH staking pallet mints inflation from AH supply.
   const TOTAL_SUPPLY = (
     (await api.query.balances.totalIssuance()) as any

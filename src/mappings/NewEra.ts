@@ -30,7 +30,19 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
 
   logger.info("Initializing active relay stakers from live chain state...");
 
-  const activeEraOpt = (await api.query.staking.activeEra()) as Option<any>;
+  // Safety: staking pallet was removed from relay chain in spec 1_020_006
+  if (!api.query.staking || !api.query.staking.activeEra) {
+    logger.info("Staking pallet not available on relay chain - skipping relay staker init");
+    return;
+  }
+
+  let activeEraOpt: Option<any>;
+  try {
+    activeEraOpt = (await api.query.staking.activeEra()) as Option<any>;
+  } catch (e) {
+    logger.warn(`Failed to query staking.activeEra on relay: ${e}`);
+    return;
+  }
   if (activeEraOpt.isNone) {
     logger.info("No active era found on relay chain");
     return;
@@ -121,9 +133,21 @@ export async function handleStakersElected(
 }
 
 export async function handleNewEra(event: SubstrateEvent): Promise<void> {
-  const currentEra = ((await api.query.staking.currentEra()) as Option<any>)
-    .unwrap()
-    .toNumber();
+  // Safety: staking pallet was removed from relay chain in spec 1_020_006
+  if (!api.query.staking || !api.query.staking.currentEra) {
+    logger.warn("Staking pallet not available - skipping handleNewEra");
+    return;
+  }
+
+  let currentEra: number;
+  try {
+    currentEra = ((await api.query.staking.currentEra()) as Option<any>)
+      .unwrap()
+      .toNumber();
+  } catch (e) {
+    logger.warn(`Failed to query staking.currentEra: ${e}`);
+    return;
+  }
 
   let validatorExposures: Array<{
     address: string;
