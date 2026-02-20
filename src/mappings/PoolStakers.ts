@@ -172,7 +172,9 @@ function calculateYearlyInflation(stakedPortion: number): number {
 async function computeAndSaveAPY(): Promise<void> {
   // Safety: check staking pallet availability before querying
   if (!api.query.staking || !api.query.staking.activeEra) {
-    logger.warn("Staking pallet not available on this chain - skipping APY computation");
+    logger.warn(
+      "Staking pallet not available on this chain - skipping APY computation",
+    );
     return;
   }
 

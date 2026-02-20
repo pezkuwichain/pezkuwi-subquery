@@ -32,7 +32,9 @@ export async function handleRelayBlock(block: SubstrateBlock): Promise<void> {
 
   // Safety: staking pallet was removed from relay chain in spec 1_020_006
   if (!api.query.staking || !api.query.staking.activeEra) {
-    logger.info("Staking pallet not available on relay chain - skipping relay staker init");
+    logger.info(
+      "Staking pallet not available on relay chain - skipping relay staker init",
+    );
     return;
   }
 
