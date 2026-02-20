@@ -261,10 +261,52 @@ async function _computeAndSaveAPYInner(): Promise<void> {
     maxAPY,
   }).save();
 
+  // Save validators as active stakers on AH
+  for (const address of validatorAddresses) {
+    const stakerId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_RELAYCHAIN}-${address}`;
+    await ActiveStaker.create({
+      id: stakerId,
+      networkId: PEZKUWI_ASSET_HUB_GENESIS,
+      stakingType: STAKING_TYPE_RELAYCHAIN,
+      address,
+    }).save();
+  }
+
+  // Save individual nominators as active stakers on AH
+  const activeNominators = new Set<string>();
+  const pages = await api.query.staking.erasStakersPaged.entries(currentEra);
+  for (const [, exp] of pages) {
+    let exposure: any;
+    try {
+      const asOpt = exp as Option<any>;
+      if (asOpt.isNone) continue;
+      exposure = asOpt.unwrap();
+    } catch {
+      exposure = exp as any;
+    }
+    if (exposure.others) {
+      for (const other of exposure.others) {
+        activeNominators.add(other.who.toString());
+      }
+    }
+  }
+
+  for (const address of activeNominators) {
+    const stakerId = `${PEZKUWI_ASSET_HUB_GENESIS}-${STAKING_TYPE_RELAYCHAIN}-${address}`;
+    await ActiveStaker.create({
+      id: stakerId,
+      networkId: PEZKUWI_ASSET_HUB_GENESIS,
+      stakingType: STAKING_TYPE_RELAYCHAIN,
+      address,
+    }).save();
+  }
+
   logger.info(
     `AH APY: ${(maxAPY * 100).toFixed(2)}% from ${
       validators.length
-    } validators, era ${currentEra}, stakedPortion=${(
+    } validators, ${
+      activeNominators.size
+    } nominators, era ${currentEra}, stakedPortion=${(
       stakedPortion * 100
     ).toFixed(2)}%`,
   );
