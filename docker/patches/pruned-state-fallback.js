@@ -53,9 +53,17 @@ initCode = initCode.replace(
 fs.writeFileSync(initFile, initCode);
 console.log(`[3/4] @polkadot/api Init.js: ${count} patches`);
 
-// --- Patch 4: @polkadot/api events.js (system.events.at) ---
-// fetchEventsRange calls api.query.system.events.at(hash) which may also fail
-// for pruned blocks. Not patching this as it's a data fetch, not startup blocker.
-// SubQuery will retry or skip those blocks.
+// --- Patch 4: @subql/node utils/substrate.js (fetchEventsRange) ---
+// When events.at(hash) fails with "State already discarded" for pruned blocks,
+// return an empty events array instead of crashing. The block is processed with
+// no events (data is lost anyway since state was pruned).
+count = 0;
+let utilsCode2 = fs.readFileSync(utilsFile, "utf8");
+utilsCode2 = utilsCode2.replace(
+  /api\.query\.system\.events\.at\(hash\)\.catch\(\(e\) => \{/g,
+  () => { count++; return "api.query.system.events.at(hash).catch((e) => { if (e.message && e.message.includes('State already discarded')) { const empty = []; empty.toArray = () => []; return empty; }"; }
+);
+fs.writeFileSync(utilsFile, utilsCode2);
+console.log(`[4/5] utils/substrate.js fetchEventsRange: ${count} patches`);
 
-console.log("[4/4] All pruned-state patches applied successfully.");
+console.log("[5/5] All pruned-state patches applied successfully.");
