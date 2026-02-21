@@ -10,8 +10,6 @@ let rewardDestinationByAddress: {
 let controllersByStash: { [blockId: string]: { [address: string]: string } } =
   {};
 
-let parachainStakingRewardEra: { [blockId: string]: number } = {};
-
 let poolMembers: {
   [blockId: number]: [string, any][];
 } = {};
@@ -180,29 +178,6 @@ export async function cachedController(
     });
     controllersByStash[blockId] = bondedByAddress;
     return bondedByAddress[accountAddress];
-  }
-}
-
-export async function cachedStakingRewardEraIndex(
-  event: SubstrateEvent,
-): Promise<number> {
-  const blockId = blockNumber(event);
-  let cachedEra = parachainStakingRewardEra[blockId];
-
-  if (cachedEra !== undefined) {
-    return cachedEra;
-  } else {
-    const era = await api.query.parachainStaking.round();
-
-    const paymentDelay =
-      api.consts.parachainStaking.rewardPaymentDelay.toHuman();
-    // HACK: used to get data from object
-    const eraIndex =
-      (era.toJSON() as { current: number }).current - Number(paymentDelay);
-
-    parachainStakingRewardEra = {};
-    parachainStakingRewardEra[blockId] = eraIndex;
-    return eraIndex;
   }
 }
 

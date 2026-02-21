@@ -61,6 +61,18 @@ dataSources:
           filter:
             module: nominationPools
             method: UnbondingPoolSlashed
+        # Staking rewards on AH (validators + direct nominators)
+        - handler: handleAHRewarded
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Rewarded
+        # Staking slashes on AH
+        - handler: handleAHSlashed
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Slashed
         # Era changes on AH (staking pallet lives here) - old format
         - handler: handleAHNewEra
           kind: substrate/EventHandler

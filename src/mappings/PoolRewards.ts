@@ -21,7 +21,6 @@ import {
 import { getPoolMembers } from "./Cache";
 import { Option } from "@pezkuwi/types";
 import {
-  PEZKUWI_RELAY_GENESIS,
   PEZKUWI_ASSET_HUB_GENESIS,
   STAKING_TYPE_NOMINATION_POOL,
 } from "./constants";

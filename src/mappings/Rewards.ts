@@ -22,12 +22,11 @@ import {
   callFromProxy,
   blockNumber,
 } from "./common";
+import { cachedRewardDestination, cachedController } from "./Cache";
 import {
-  cachedRewardDestination,
-  cachedController,
-  cachedStakingRewardEraIndex,
-} from "./Cache";
-import { PEZKUWI_RELAY_GENESIS, STAKING_TYPE_RELAYCHAIN } from "./constants";
+  PEZKUWI_ASSET_HUB_GENESIS,
+  STAKING_TYPE_RELAYCHAIN,
+} from "./constants";
 
 function isPayoutStakers(call: any): boolean {
   return call.method == "payoutStakers";
@@ -43,13 +42,11 @@ function isPayoutValidator(call: any): boolean {
 
 function extractArgsFromPayoutStakers(call: any): [string, number] {
   const [validatorAddressRaw, eraRaw] = call.args;
-
   return [validatorAddressRaw.toString(), (eraRaw as any).toNumber()];
 }
 
 function extractArgsFromPayoutStakersByPage(call: any): [string, number] {
   const [validatorAddressRaw, eraRaw, _] = call.args;
-
   return [validatorAddressRaw.toString(), (eraRaw as any).toNumber()];
 }
 
@@ -58,17 +55,15 @@ function extractArgsFromPayoutValidator(
   sender: string,
 ): [string, number] {
   const [eraRaw] = call.args;
-
   return [sender, (eraRaw as any).toNumber()];
 }
 
-export async function handleRewarded(
+/**
+ * Handle staking::Rewarded on Asset Hub
+ */
+export async function handleAHRewarded(
   rewardEvent: SubstrateEvent,
 ): Promise<void> {
-  await handleReward(rewardEvent);
-}
-
-export async function handleReward(rewardEvent: SubstrateEvent): Promise<void> {
   await handleRewardForTxHistory(rewardEvent);
   let accumulatedReward = await updateAccumulatedReward(rewardEvent, true);
   await updateAccountRewards(
@@ -76,11 +71,23 @@ export async function handleReward(rewardEvent: SubstrateEvent): Promise<void> {
     RewardType.reward,
     accumulatedReward.amount,
   );
-  await saveMultiStakingReward(
-    rewardEvent,
-    RewardType.reward,
-    STAKING_TYPE_RELAYCHAIN,
+  await saveMultiStakingReward(rewardEvent, RewardType.reward);
+}
+
+/**
+ * Handle staking::Slashed on Asset Hub
+ */
+export async function handleAHSlashed(
+  slashEvent: SubstrateEvent,
+): Promise<void> {
+  await handleSlashForTxHistory(slashEvent);
+  let accumulatedReward = await updateAccumulatedReward(slashEvent, false);
+  await updateAccountRewards(
+    slashEvent,
+    RewardType.slash,
+    accumulatedReward.amount,
   );
+  await saveMultiStakingReward(slashEvent, RewardType.slash);
 }
 
 async function handleRewardForTxHistory(
@@ -89,7 +96,6 @@ async function handleRewardForTxHistory(
   let element = await HistoryElement.get(eventId(rewardEvent));
 
   if (element !== undefined) {
-    // already processed reward previously
     return;
   }
 
@@ -215,32 +221,12 @@ function determinePayoutCallsArgs(
   }
 }
 
-export async function handleSlashed(slashEvent: SubstrateEvent): Promise<void> {
-  await handleSlash(slashEvent);
-}
-
-export async function handleSlash(slashEvent: SubstrateEvent): Promise<void> {
-  await handleSlashForTxHistory(slashEvent);
-  let accumulatedReward = await updateAccumulatedReward(slashEvent, false);
-  await updateAccountRewards(
-    slashEvent,
-    RewardType.slash,
-    accumulatedReward.amount,
-  );
-  await saveMultiStakingReward(
-    slashEvent,
-    RewardType.slash,
-    STAKING_TYPE_RELAYCHAIN,
-  );
-}
-
 async function getValidators(era: number): Promise<Set<string>> {
   const eraStakersInSlashEra = await (api.query.staking.erasStakersClipped
     ? api.query.staking.erasStakersClipped.keys(era)
     : api.query.staking.erasStakersOverview.keys(era));
   const validatorsInSlashEra = eraStakersInSlashEra.map((key: any) => {
     let [, validatorId] = key.args;
-
     return validatorId.toString();
   });
   return new Set(validatorsInSlashEra);
@@ -252,7 +238,6 @@ async function handleSlashForTxHistory(
   let element = await HistoryElement.get(eventId(slashEvent));
 
   if (element !== undefined) {
-    // already processed reward previously
     return;
   }
   const eraWrapped = await api.query.staking.currentEra();
@@ -396,48 +381,6 @@ async function updateAccountRewards(
   await accountReward.save();
 }
 
-async function handleParachainRewardForTxHistory(
-  rewardEvent: SubstrateEvent,
-): Promise<void> {
-  let [account, amount] = decodeDataFromReward(rewardEvent);
-  handleGenericForTxHistory(
-    rewardEvent,
-    account.toString(),
-    async (element: HistoryElement) => {
-      const eraIndex = await cachedStakingRewardEraIndex(rewardEvent);
-
-      const validatorEvent = rewardEvent.block.events.find(
-        (event) =>
-          event.event.section == rewardEvent.event.section &&
-          event.event.method == rewardEvent.event.method,
-      );
-      const validatorId = validatorEvent?.event.data[0].toString();
-      element.reward = {
-        eventIdx: rewardEvent.idx,
-        amount: amount.toString(),
-        isReward: true,
-        stash: account.toString(),
-        validator: validatorId,
-        era: eraIndex,
-      };
-
-      return element;
-    },
-  );
-}
-
-export async function handleParachainRewarded(
-  rewardEvent: SubstrateEvent,
-): Promise<void> {
-  await handleParachainRewardForTxHistory(rewardEvent);
-  let accumulatedReward = await updateAccumulatedReward(rewardEvent, true);
-  await updateAccountRewards(
-    rewardEvent,
-    RewardType.reward,
-    accumulatedReward.amount,
-  );
-}
-
 // ============= GENERICS ================
 
 interface AccumulatedInterface {
@@ -500,23 +443,6 @@ export async function handleGenericForTxHistory(
   (await fieldCallback(element)).save();
 }
 
-interface AccountRewardsInterface {
-  id: string;
-
-  address: string;
-
-  blockNumber: number;
-
-  timestamp: bigint;
-
-  amount: bigint;
-
-  accumulatedAmount: bigint;
-
-  type: RewardType;
-  save(): Promise<void>;
-}
-
 export function eventRecordToSubstrateEvent(eventRecord: any): SubstrateEvent {
   return eventRecord as unknown as SubstrateEvent;
 }
@@ -538,19 +464,18 @@ function decodeDataFromReward(event: SubstrateEvent): [any, any] {
  * Save a reward/slash to the multi-staking Reward entity
  * (used by PezWallet dashboard for rewards aggregation)
  */
-export async function saveMultiStakingReward(
+async function saveMultiStakingReward(
   event: SubstrateEvent,
   rewardType: RewardType,
-  stakingType: string,
 ): Promise<void> {
   const [accountId, amount] = decodeDataFromReward(event);
   const accountAddress = accountId.toString();
-  const id = `${eventId(event)}-${accountAddress}-${stakingType}`;
+  const id = `${eventId(event)}-${accountAddress}-${STAKING_TYPE_RELAYCHAIN}`;
 
   const reward = Reward.create({
     id,
-    networkId: PEZKUWI_RELAY_GENESIS,
-    stakingType,
+    networkId: PEZKUWI_ASSET_HUB_GENESIS,
+    stakingType: STAKING_TYPE_RELAYCHAIN,
     address: accountAddress,
     type: rewardType,
     amount: (amount as any).toBigInt(),
