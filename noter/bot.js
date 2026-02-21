@@ -1,12 +1,16 @@
 /**
  * Pezkuwi Noter Bot
  *
- * Collects staking data from Relay Chain and Asset Hub, then submits
- * to People Chain via receive_staking_details() as a noter-authorized account.
+ * Collects staking data from Asset Hub (direct staking + nomination pools),
+ * then submits to People Chain via receive_staking_details() as a noter-authorized account.
+ *
+ * NOTE: NPoS staking moved from Relay Chain to Asset Hub.
+ * RC no longer has pallet_staking (removed via RemovePallet migration).
+ * Direct staking (bond/nominate/unbond) is now on AH as pallet_staking_async.
  *
  * Workflow:
  * 1. Listen for ScoreTrackingStarted events on People Chain
- * 2. On event → query staking data from Relay Chain (+ Asset Hub pools)
+ * 2. On event → query staking data from Asset Hub (direct staking + pools)
  * 3. Submit receive_staking_details() signed by noter account
  * 4. Periodically scan all tracked accounts for staking changes
  *
@@ -90,20 +94,25 @@ async function connectApi(endpoint, name) {
 // ========================================
 
 /**
- * Get staking data from Relay Chain for a single account.
+ * Get direct staking data from Asset Hub for a single account.
+ * NPoS staking moved from Relay Chain to Asset Hub (pallet_staking_async).
  * Returns { stakedAmount, nominationsCount, unlockingChunksCount }
  */
-async function getRelayStakingData(relayApi, address) {
+async function getAssetHubStakingData(assetHubApi, address) {
   try {
+    if (!assetHubApi.query.staking) {
+      return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0 };
+    }
+
     // Try direct ledger query (stash == controller in modern Substrate)
-    let ledgerResult = await relayApi.query.staking.ledger(address);
+    let ledgerResult = await assetHubApi.query.staking.ledger(address);
 
     // Fallback: check bonded controller
     if (ledgerResult.isNone) {
-      const bonded = await relayApi.query.staking.bonded(address);
+      const bonded = await assetHubApi.query.staking.bonded(address);
       if (bonded.isSome) {
         const controller = bonded.unwrap().toString();
-        ledgerResult = await relayApi.query.staking.ledger(controller);
+        ledgerResult = await assetHubApi.query.staking.ledger(controller);
       }
     }
 
@@ -115,7 +124,7 @@ async function getRelayStakingData(relayApi, address) {
     const stakedAmount = ledger.active.toBigInt();
 
     // Get nominations count
-    const nominations = await relayApi.query.staking.nominators(address);
+    const nominations = await assetHubApi.query.staking.nominators(address);
     const nominationsCount = nominations.isSome
       ? nominations.unwrap().targets.length
       : 0;
@@ -125,7 +134,7 @@ async function getRelayStakingData(relayApi, address) {
 
     return { stakedAmount, nominationsCount, unlockingChunksCount };
   } catch (err) {
-    log('ERROR', `Failed to get relay staking data for ${address}`, { error: err.message });
+    log('ERROR', `Failed to get AH staking data for ${address}`, { error: err.message });
     return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0 };
   }
 }
@@ -274,32 +283,56 @@ async function submitStakingDetails(peopleApi, noterKeypair, updates) {
 async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address) {
   const updates = [];
 
-  // 1. Relay Chain staking
-  const relayData = await getRelayStakingData(relayApi, address);
-  const relayCached = await getCachedData(peopleApi, address, 'RelayChain');
+  // 1. Asset Hub direct staking (NPoS staking moved from RC to AH)
+  const ahStakingData = await getAssetHubStakingData(assetHubApi, address);
+  const ahStakingCached = await getCachedData(peopleApi, address, 'AssetHub');
 
-  if (hasDataChanged(relayData, relayCached)) {
-    updates.push({ address, source: 'RelayChain', data: relayData });
-    const stakedHEZ = Number(relayData.stakedAmount / UNITS);
-    log('INFO', `Relay data changed for ${address.slice(0, 8)}...`, {
-      stakedHEZ, noms: relayData.nominationsCount, unlocking: relayData.unlockingChunksCount
+  if (hasDataChanged(ahStakingData, ahStakingCached)) {
+    updates.push({ address, source: 'AssetHub', data: ahStakingData });
+    const stakedHEZ = Number(ahStakingData.stakedAmount / UNITS);
+    log('INFO', `AH staking data changed for ${address.slice(0, 8)}...`, {
+      stakedHEZ, noms: ahStakingData.nominationsCount, unlocking: ahStakingData.unlockingChunksCount
     });
   }
 
-  // 2. Asset Hub nomination pools
-  const assetHubData = await getAssetHubPoolData(assetHubApi, address);
-  const assetHubCached = await getCachedData(peopleApi, address, 'AssetHub');
+  // 2. Asset Hub nomination pools (separate from direct staking)
+  const poolData = await getAssetHubPoolData(assetHubApi, address);
 
-  if (assetHubData.stakedAmount > 0n || assetHubCached !== null) {
-    // Only submit if there's actual pool membership or we need to clear old data
-    if (hasDataChanged(assetHubData, assetHubCached)) {
-      updates.push({ address, source: 'AssetHub', data: assetHubData });
-      const stakedHEZ = Number(assetHubData.stakedAmount / UNITS);
-      log('INFO', `Asset Hub data changed for ${address.slice(0, 8)}...`, { stakedHEZ });
+  // If user has pool membership, merge pool stake into AH data
+  if (poolData.stakedAmount > 0n) {
+    // Combine direct staking + pool stake for total AH stake
+    const combinedData = {
+      stakedAmount: ahStakingData.stakedAmount + poolData.stakedAmount,
+      nominationsCount: ahStakingData.nominationsCount,
+      unlockingChunksCount: ahStakingData.unlockingChunksCount + poolData.unlockingChunksCount,
+    };
+
+    if (hasDataChanged(combinedData, ahStakingCached)) {
+      // Replace previous AH update with combined data
+      const existingIdx = updates.findIndex(u => u.source === 'AssetHub');
+      if (existingIdx >= 0) {
+        updates[existingIdx].data = combinedData;
+      } else {
+        updates.push({ address, source: 'AssetHub', data: combinedData });
+      }
+      const stakedHEZ = Number(combinedData.stakedAmount / UNITS);
+      log('INFO', `AH combined (staking+pool) for ${address.slice(0, 8)}...`, { stakedHEZ });
     }
   }
 
-  // 3. Submit all updates in a single batch
+  // 3. Clear old RelayChain cache if it exists (staking moved to AH)
+  const relayCached = await getCachedData(peopleApi, address, 'RelayChain');
+  if (relayCached !== null && relayCached.stakedAmount > 0n) {
+    // Submit zero to clear old RC cache entry
+    updates.push({
+      address,
+      source: 'RelayChain',
+      data: { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0 }
+    });
+    log('INFO', `Clearing old RC cache for ${address.slice(0, 8)}...`);
+  }
+
+  // 4. Submit all updates in a single batch
   if (updates.length > 0) {
     await submitStakingDetails(peopleApi, noterKeypair, updates);
   }
