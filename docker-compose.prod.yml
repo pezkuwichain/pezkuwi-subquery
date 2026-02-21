@@ -159,9 +159,25 @@ services:
       PEOPLE_RPC: ws://217.77.6.126:41944
       SCAN_INTERVAL_MS: "300000"
 
+  payout-bot:
+    container_name: payout-pezkuwi
+    build:
+      context: ./payout-bot
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    secrets:
+      - payout_mnemonic
+    environment:
+      TZ: UTC
+      ASSET_HUB_RPC: wss://asset-hub-rpc.pezkuwichain.io
+      MNEMONIC_FILE: /run/secrets/payout_mnemonic
+      INTERVAL_MS: "600000"
+
 secrets:
   noter_mnemonic:
     file: ./secrets/noter_mnemonic.txt
+  payout_mnemonic:
+    file: ./secrets/payout_mnemonic.txt
 
 volumes:
   pgdata:
