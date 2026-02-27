@@ -150,12 +150,12 @@ async function getAssetHubStakingData(assetHubApi, address) {
 async function getAssetHubPoolData(assetHubApi, address) {
   try {
     if (!assetHubApi.query.nominationPools?.poolMembers) {
-      return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0 };
+      return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0, queryFailed: false };
     }
 
     const memberResult = await assetHubApi.query.nominationPools.poolMembers(address);
     if (memberResult.isNone) {
-      return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0 };
+      return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0, queryFailed: false };
     }
 
     const member = memberResult.unwrap();
@@ -187,10 +187,10 @@ async function getAssetHubPoolData(assetHubApi, address) {
       }
     } catch { /* ignore */ }
 
-    return { stakedAmount, nominationsCount: 0, unlockingChunksCount };
+    return { stakedAmount, nominationsCount: 0, unlockingChunksCount, queryFailed: false };
   } catch (err) {
     log('ERROR', `Failed to get Asset Hub pool data for ${address}`, { error: err.message });
-    return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0 };
+    return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0, queryFailed: true };
   }
 }
 
@@ -283,47 +283,43 @@ async function submitStakingDetails(peopleApi, noterKeypair, updates) {
 async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address) {
   const updates = [];
 
-  // 1. Asset Hub direct staking (NPoS staking moved from RC to AH)
+  // 1. Collect ALL staking data first (direct + pool) before comparing
   const ahStakingData = await getAssetHubStakingData(assetHubApi, address);
-  const ahStakingCached = await getCachedData(peopleApi, address, 'AssetHub');
-
-  if (hasDataChanged(ahStakingData, ahStakingCached)) {
-    updates.push({ address, source: 'AssetHub', data: ahStakingData });
-    const stakedHEZ = Number(ahStakingData.stakedAmount / UNITS);
-    log('INFO', `AH staking data changed for ${address.slice(0, 8)}...`, {
-      stakedHEZ, noms: ahStakingData.nominationsCount, unlocking: ahStakingData.unlockingChunksCount
-    });
-  }
-
-  // 2. Asset Hub nomination pools (separate from direct staking)
   const poolData = await getAssetHubPoolData(assetHubApi, address);
 
-  // If user has pool membership, merge pool stake into AH data
-  if (poolData.stakedAmount > 0n) {
-    // Combine direct staking + pool stake for total AH stake
-    const combinedData = {
-      stakedAmount: ahStakingData.stakedAmount + poolData.stakedAmount,
-      nominationsCount: ahStakingData.nominationsCount,
-      unlockingChunksCount: ahStakingData.unlockingChunksCount + poolData.unlockingChunksCount,
-    };
+  // 2. Combine direct staking + pool into a single total
+  const combinedData = {
+    stakedAmount: ahStakingData.stakedAmount + poolData.stakedAmount,
+    nominationsCount: ahStakingData.nominationsCount,
+    unlockingChunksCount: ahStakingData.unlockingChunksCount + poolData.unlockingChunksCount,
+  };
 
-    if (hasDataChanged(combinedData, ahStakingCached)) {
-      // Replace previous AH update with combined data
-      const existingIdx = updates.findIndex(u => u.source === 'AssetHub');
-      if (existingIdx >= 0) {
-        updates[existingIdx].data = combinedData;
-      } else {
-        updates.push({ address, source: 'AssetHub', data: combinedData });
-      }
+  // 3. Only compare the COMBINED total against cache — never submit partial data
+  const ahStakingCached = await getCachedData(peopleApi, address, 'AssetHub');
+
+  if (hasDataChanged(combinedData, ahStakingCached)) {
+    // Skip update if pool query failed and we'd be downgrading a known stake to 0
+    if (poolData.queryFailed && ahStakingCached && ahStakingCached.stakedAmount > combinedData.stakedAmount) {
+      log('WARN', `Skipping update for ${address.slice(0, 8)}... — pool query failed, would downgrade stake`, {
+        cached: Number(ahStakingCached.stakedAmount / UNITS),
+        wouldSubmit: Number(combinedData.stakedAmount / UNITS),
+      });
+    } else {
+      updates.push({ address, source: 'AssetHub', data: combinedData });
       const stakedHEZ = Number(combinedData.stakedAmount / UNITS);
-      log('INFO', `AH combined (staking+pool) for ${address.slice(0, 8)}...`, { stakedHEZ });
+      log('INFO', `AH staking update for ${address.slice(0, 8)}...`, {
+        stakedHEZ,
+        direct: Number(ahStakingData.stakedAmount / UNITS),
+        pool: Number(poolData.stakedAmount / UNITS),
+        noms: combinedData.nominationsCount,
+        unlocking: combinedData.unlockingChunksCount,
+      });
     }
   }
 
-  // 3. Clear old RelayChain cache if it exists (staking moved to AH)
+  // 4. Clear old RelayChain cache if it exists (staking moved to AH)
   const relayCached = await getCachedData(peopleApi, address, 'RelayChain');
   if (relayCached !== null && relayCached.stakedAmount > 0n) {
-    // Submit zero to clear old RC cache entry
     updates.push({
       address,
       source: 'RelayChain',
@@ -332,7 +328,7 @@ async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, ad
     log('INFO', `Clearing old RC cache for ${address.slice(0, 8)}...`);
   }
 
-  // 4. Submit all updates in a single batch
+  // 5. Submit all updates in a single batch
   if (updates.length > 0) {
     await submitStakingDetails(peopleApi, noterKeypair, updates);
   }
