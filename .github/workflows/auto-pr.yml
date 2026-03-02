@@ -18,17 +18,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Check if there's already an open PR from master to main
           EXISTING_PR=$(gh pr list --base main --head master --state open --json number --jq '.[0].number')
 
           if [ -n "$EXISTING_PR" ]; then
             echo "PR #$EXISTING_PR already exists — new commits will appear automatically"
-          else
-            echo "Creating new PR: master → main"
-            gh pr create \
-              --base main \
-              --head master \
-              --title "Sync: master → main" \
-              --body "Automated PR to sync master branch changes to main.
+            exit 0
+          fi
 
-          This PR was created automatically and will be merged once CI checks pass."
+          echo "Creating new PR: master → main"
+          if gh pr create \
+            --base main \
+            --head master \
+            --title "Sync: master → main" \
+            --body "Automated PR to sync master branch changes to main.
+
+          This PR was created automatically and will be merged once CI checks pass."; then
+            echo "PR created successfully"
+          else
+            echo "PR creation skipped (branches may already be in sync)"
           fi
