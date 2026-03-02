@@ -1,0 +1,34 @@
+name: Auto PR (master → main)
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create or update PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING_PR=$(gh pr list --base main --head master --state open --json number --jq '.[0].number')
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists — new commits will appear automatically"
+          else
+            echo "Creating new PR: master → main"
+            gh pr create \
+              --base main \
+              --head master \
+              --title "Sync: master → main" \
+              --body "Automated PR to sync master branch changes to main.
+
+          This PR was created automatically and will be merged once CI checks pass."
+          fi

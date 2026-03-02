@@ -1,0 +1,47 @@
+name: Auto Merge
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Find and merge master → main PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+          echo "Workflow ran on branch: $HEAD_BRANCH"
+
+          if [ "$HEAD_BRANCH" != "master" ]; then
+            echo "Not a master branch PR, skipping"
+            exit 0
+          fi
+
+          PR_NUMBER=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head master \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open PR from master to main found, skipping"
+            exit 0
+          fi
+
+          echo "Merging PR #$PR_NUMBER"
+          gh pr merge "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --merge \
+            --delete-branch=false
