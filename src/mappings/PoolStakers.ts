@@ -103,7 +103,9 @@ export async function handleBlock(block: SubstrateBlock): Promise<void> {
       if (!activeEraOpt.isNone) {
         const currentEra = activeEraOpt.unwrap().index.toNumber();
         if (lastProcessedEra >= 0 && currentEra > lastProcessedEra) {
-          logger.info(`Era change detected in handleBlock: ${lastProcessedEra} -> ${currentEra}, refreshing active stakers`);
+          logger.info(
+            `Era change detected in handleBlock: ${lastProcessedEra} -> ${currentEra}, refreshing active stakers`,
+          );
           await computeAndSaveAPY();
         }
         lastProcessedEra = currentEra;
@@ -296,12 +298,17 @@ async function _computeAndSaveAPYInner(): Promise<void> {
   // Remove ALL existing active stakers before refreshing with current era data.
   // This prevents stale entries from nominators who are no longer in the exposure set.
   try {
-    const existingStakers = await ActiveStaker.getByNetworkId(PEZKUWI_ASSET_HUB_GENESIS);
+    const existingStakers = await ActiveStaker.getByNetworkId(
+      PEZKUWI_ASSET_HUB_GENESIS,
+      { limit: 500 },
+    );
     if (existingStakers && existingStakers.length > 0) {
       for (const staker of existingStakers) {
         await ActiveStaker.remove(staker.id);
       }
-      logger.info(`Cleared ${existingStakers.length} stale active stakers for era ${currentEra}`);
+      logger.info(
+        `Cleared ${existingStakers.length} stale active stakers for era ${currentEra}`,
+      );
     }
   } catch (e) {
     logger.warn(`Failed to clear stale active stakers: ${e}`);
