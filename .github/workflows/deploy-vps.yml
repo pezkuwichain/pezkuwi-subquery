@@ -13,10 +13,13 @@ jobs:
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd /opt/subquery
+            git stash --include-untracked || true
             git pull origin main
             yarn install --frozen-lockfile
             ./node_modules/.bin/subql codegen pezkuwi-governance.yaml
             ./node_modules/.bin/subql build pezkuwi.yaml
             docker compose -f docker-compose.prod.yml build
             docker compose -f docker-compose.prod.yml up -d
+            git stash pop || true
