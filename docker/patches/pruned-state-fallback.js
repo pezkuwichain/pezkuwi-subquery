@@ -66,4 +66,31 @@ utilsCode2 = utilsCode2.replace(
 fs.writeFileSync(utilsFile, utilsCode2);
 console.log(`[4/5] utils/substrate.js fetchEventsRange: ${count} patches`);
 
-console.log("[5/5] All pruned-state patches applied successfully.");
+// --- Patch 5: @subql/node utils/substrate.js (wrapExtrinsics / getExtrinsicSuccess) ---
+// When events are empty (pruned block), groupEventsByExtrinsic returns {}.
+// Then groupedEvents[idx] is undefined for each extrinsic, and
+// getExtrinsicSuccess(undefined) crashes with "Cannot read properties of undefined
+// (reading 'findIndex')". Fix: default to empty array when events is undefined.
+count = 0;
+let utilsCode3 = fs.readFileSync(utilsFile, "utf8");
+
+// Patch getExtrinsicSuccess to handle undefined events
+utilsCode3 = utilsCode3.replace(
+  /function getExtrinsicSuccess\(events\) \{/g,
+  () => { count++; return "function getExtrinsicSuccess(events) { if (!events || !events.findIndex) return false;"; }
+);
+fs.writeFileSync(utilsFile, utilsCode3);
+console.log(`[5/7] utils/substrate.js getExtrinsicSuccess: ${count} patches`);
+
+// --- Patch 6: @subql/node utils/substrate.js (events.toArray fallback) ---
+// When events is undefined or has no toArray method, default to empty array.
+count = 0;
+let utilsCode4 = fs.readFileSync(utilsFile, "utf8");
+utilsCode4 = utilsCode4.replace(
+  /const wrappedBlock = wrapBlock\(block, events\.toArray\(\), parentSpecVersion\);/g,
+  () => { count++; return "const wrappedBlock = wrapBlock(block, (events && events.toArray) ? events.toArray() : [], parentSpecVersion);"; }
+);
+fs.writeFileSync(utilsFile, utilsCode4);
+console.log(`[6/7] utils/substrate.js events.toArray: ${count} patches`);
+
+console.log("[7/7] All pruned-state patches applied successfully.");
