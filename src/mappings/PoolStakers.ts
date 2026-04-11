@@ -297,17 +297,24 @@ async function _computeAndSaveAPYInner(): Promise<void> {
 
   // Remove ALL existing active stakers before refreshing with current era data.
   // This prevents stale entries from nominators who are no longer in the exposure set.
+  // SubQuery getByField max limit is 100 — paginate to remove all.
   try {
-    const existingStakers = await ActiveStaker.getByNetworkId(
-      PEZKUWI_ASSET_HUB_GENESIS,
-      { limit: 500 },
-    );
-    if (existingStakers && existingStakers.length > 0) {
-      for (const staker of existingStakers) {
+    let cleared = 0;
+    while (true) {
+      const batch = await ActiveStaker.getByNetworkId(
+        PEZKUWI_ASSET_HUB_GENESIS,
+        { limit: 100 },
+      );
+      if (!batch || batch.length === 0) break;
+      for (const staker of batch) {
         await ActiveStaker.remove(staker.id);
       }
+      cleared += batch.length;
+      if (batch.length < 100) break;
+    }
+    if (cleared > 0) {
       logger.info(
-        `Cleared ${existingStakers.length} stale active stakers for era ${currentEra}`,
+        `Cleared ${cleared} stale active stakers for era ${currentEra}`,
       );
     }
   } catch (e) {
