@@ -22,7 +22,7 @@ network:
 dataSources:
   - name: governance
     kind: substrate/Runtime
-    startBlock: 57100
+    startBlock: 1228500
     mapping:
       file: ./dist/index.js
       handlers:
