@@ -219,13 +219,42 @@ async function getCachedData(peopleApi, address, source) {
 }
 
 /**
- * Check if staking data has changed compared to cached values.
+ * Get an already-pending (not yet finalized) submission for comparison. Without this, every
+ * scan compares fresh data only against CachedStakingDetails - which stays empty until a
+ * submission actually matures and gets finalized - so a stable account with genuinely unchanged
+ * stake looked "changed" on every single scan, and each resubmission reset submitted_at to the
+ * current block. That kept the dispute window perpetually restarting: real accounts (Serok,
+ * QaziM) never matured because a fresh scan always arrived and re-submitted before finalize ever
+ * got a chance.
  */
-function hasDataChanged(fresh, cached) {
-  if (!cached) return true; // No cache → need to submit
-  return fresh.stakedAmount !== cached.stakedAmount ||
-         fresh.nominationsCount !== cached.nominationsCount ||
-         fresh.unlockingChunksCount !== cached.unlockingChunksCount;
+async function getPendingData(peopleApi, address, source) {
+  try {
+    const result = await peopleApi.query.stakingScore.pendingStakingDetails(address, source);
+    if (result.isNone || result.isEmpty) {
+      return null;
+    }
+    const json = result.unwrap().toJSON().details;
+    return {
+      stakedAmount: BigInt(json.stakedAmount ?? json.staked_amount ?? '0'),
+      nominationsCount: json.nominationsCount ?? json.nominations_count ?? 0,
+      unlockingChunksCount: json.unlockingChunksCount ?? json.unlocking_chunks_count ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if staking data has changed compared to the most recent known value for this account -
+ * whichever is more recent, an unmatured pending submission or (once nothing is pending) the
+ * finalized cache. Resubmitting identical data to what's already pending would only reset its
+ * dispute-window clock for no reason.
+ */
+function hasDataChanged(fresh, baseline) {
+  if (!baseline) return true; // Nothing recorded yet at all → need to submit
+  return fresh.stakedAmount !== baseline.stakedAmount ||
+         fresh.nominationsCount !== baseline.nominationsCount ||
+         fresh.unlockingChunksCount !== baseline.unlockingChunksCount;
 }
 
 // ========================================
@@ -352,8 +381,11 @@ async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, ad
     unlockingChunksCount: ahStakingData.unlockingChunksCount + poolData.unlockingChunksCount,
   };
 
-  // 3. Only compare the COMBINED total against cache — never submit partial data
-  const ahStakingCached = await getCachedData(peopleApi, address, 'AssetHub');
+  // 3. Compare the COMBINED total against whichever is more recent - an already-pending
+  // (not yet matured) submission, or failing that, the finalized cache. Never submit partial
+  // data, and never resubmit unchanged data just because the cache itself is still empty.
+  const ahStakingPending = await getPendingData(peopleApi, address, 'AssetHub');
+  const ahStakingCached = ahStakingPending ?? await getCachedData(peopleApi, address, 'AssetHub');
 
   if (hasDataChanged(combinedData, ahStakingCached)) {
     // Skip update if pool query failed and we'd be downgrading a known stake to 0
@@ -375,8 +407,10 @@ async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, ad
     }
   }
 
-  // 4. Clear old RelayChain cache if it exists (staking moved to AH)
-  const relayCached = await getCachedData(peopleApi, address, 'RelayChain');
+  // 4. Clear old RelayChain cache if it exists (staking moved to AH) - same pending-first check
+  // as step 3, so an already-submitted (unmatured) clear isn't resubmitted every cycle either.
+  const relayPending = await getPendingData(peopleApi, address, 'RelayChain');
+  const relayCached = relayPending ?? await getCachedData(peopleApi, address, 'RelayChain');
   if (relayCached !== null && relayCached.stakedAmount > 0n) {
     updates.push({
       address,
@@ -524,9 +558,11 @@ async function main() {
     log('WARN', 'Could not verify noter tiki', { error: err.message });
   }
 
-  // Run initial full scan
-  await fullScan(relayApi, assetHubApi, peopleApi, noterKeypair);
+  // Finalize any already-matured entries BEFORE scanning - so a fresh scan's comparison (now
+  // pending-aware, see getPendingData) never has a chance to touch something that should have
+  // already been promoted to CachedStakingDetails this cycle.
   await finalizeMaturedPending(peopleApi, noterKeypair);
+  await fullScan(relayApi, assetHubApi, peopleApi, noterKeypair);
 
   // Start event listener for real-time processing
   await startEventListener(relayApi, assetHubApi, peopleApi, noterKeypair);
@@ -534,8 +570,8 @@ async function main() {
   // Schedule periodic full scans
   log('INFO', `Periodic scan scheduled every ${SCAN_INTERVAL / 1000}s`);
   setInterval(() => {
-    fullScan(relayApi, assetHubApi, peopleApi, noterKeypair)
-      .then(() => finalizeMaturedPending(peopleApi, noterKeypair))
+    finalizeMaturedPending(peopleApi, noterKeypair)
+      .then(() => fullScan(relayApi, assetHubApi, peopleApi, noterKeypair))
       .catch(err => {
         log('ERROR', 'Periodic scan failed', { error: err.message });
       });
