@@ -245,33 +245,19 @@ function hasDataChanged(fresh, cached) {
 let submitQueue = Promise.resolve();
 
 /**
- * Submit receive_staking_details for one or more (address, source) pairs.
- * Batches multiple calls into a single utility.batchAll transaction.
+ * Routes a signAndSend through the shared serialization queue, with the standard
+ * dispatch-error decoding/logging both callers below need.
  */
-function submitStakingDetails(peopleApi, noterKeypair, updates) {
-  if (updates.length === 0) return Promise.resolve();
-
-  const task = submitQueue.then(() => doSubmitStakingDetails(peopleApi, noterKeypair, updates));
+function queueSubmit(peopleApi, noterKeypair, tx, description) {
+  const task = submitQueue.then(() => doSignAndSend(peopleApi, noterKeypair, tx, description));
   // Never let one caller's failure poison the queue for the next caller's submission.
   submitQueue = task.catch(() => {});
   return task;
 }
 
-function doSubmitStakingDetails(peopleApi, noterKeypair, updates) {
-  const calls = updates.map(({ address, source, data }) =>
-    peopleApi.tx.stakingScore.receiveStakingDetails(
-      address,
-      source,
-      data.stakedAmount.toString(),
-      data.nominationsCount,
-      data.unlockingChunksCount,
-    )
-  );
-
-  const tx = calls.length === 1 ? calls[0] : peopleApi.tx.utility.batchAll(calls);
-
+function doSignAndSend(peopleApi, noterKeypair, tx, description) {
   return new Promise((resolve, reject) => {
-    tx.signAndSend(noterKeypair, ({ status, dispatchError, events }) => {
+    tx.signAndSend(noterKeypair, ({ status, dispatchError }) => {
       if (status.isInBlock) {
         if (dispatchError) {
           let errMsg = dispatchError.toString();
@@ -281,18 +267,71 @@ function doSubmitStakingDetails(peopleApi, noterKeypair, updates) {
               errMsg = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
             } catch { /* use default */ }
           }
-          log('ERROR', 'TX failed', { error: errMsg, block: status.asInBlock.toHex() });
+          log('ERROR', 'TX failed', { description, error: errMsg, block: status.asInBlock.toHex() });
           reject(new Error(errMsg));
         } else {
-          const addresses = updates.map(u => u.address.slice(0, 8) + '...').join(', ');
-          log('INFO', `TX success: ${updates.length} update(s) for [${addresses}]`, {
-            block: status.asInBlock.toHex()
-          });
+          log('INFO', `TX success: ${description}`, { block: status.asInBlock.toHex() });
           resolve();
         }
       }
     }).catch(reject);
   });
+}
+
+/**
+ * Submit receive_staking_details for one or more (address, source) pairs.
+ * Batches multiple calls into a single utility.batchAll transaction.
+ */
+function submitStakingDetails(peopleApi, noterKeypair, updates) {
+  if (updates.length === 0) return Promise.resolve();
+
+  const calls = updates.map(({ address, source, data }) =>
+    peopleApi.tx.stakingScore.receiveStakingDetails(
+      address,
+      source,
+      data.stakedAmount.toString(),
+      data.nominationsCount,
+      data.unlockingChunksCount,
+    )
+  );
+  const tx = calls.length === 1 ? calls[0] : peopleApi.tx.utility.batchAll(calls);
+  const addresses = updates.map(u => u.address.slice(0, 8) + '...').join(', ');
+
+  return queueSubmit(peopleApi, noterKeypair, tx, `${updates.length} update(s) for [${addresses}]`);
+}
+
+/**
+ * finalize_staking_details() is the permissionless step that promotes a matured
+ * PendingStakingDetails entry into CachedStakingDetails (see the pallet's
+ * DisputeWindow doc comment) - nothing in this codebase called it before this fix,
+ * so entries sat in Pending forever even after their dispute window elapsed.
+ * Scans all pending entries once per periodic cycle and finalizes whichever have matured.
+ */
+async function finalizeMaturedPending(peopleApi, noterKeypair) {
+  const disputeWindow = peopleApi.consts.stakingScore.disputeWindow.toNumber();
+  const currentBlock = (await peopleApi.rpc.chain.getHeader()).number.toNumber();
+
+  const entries = await peopleApi.query.stakingScore.pendingStakingDetails.entries();
+  const matured = entries.filter(([, value]) => {
+    const submittedAt = value.unwrap().submittedAt.toNumber();
+    return currentBlock >= submittedAt + disputeWindow;
+  });
+
+  if (matured.length === 0) return;
+
+  log('INFO', `Finalizing ${matured.length} matured pending submission(s)`);
+
+  const calls = matured.map(([key]) => {
+    const [who, source] = key.args;
+    return peopleApi.tx.stakingScore.finalizeStakingDetails(who, source);
+  });
+  const tx = calls.length === 1 ? calls[0] : peopleApi.tx.utility.batchAll(calls);
+
+  try {
+    await queueSubmit(peopleApi, noterKeypair, tx, `finalize ${matured.length} matured entrie(s)`);
+  } catch (err) {
+    log('ERROR', 'Finalize batch failed', { error: err.message });
+  }
 }
 
 // ========================================
@@ -487,6 +526,7 @@ async function main() {
 
   // Run initial full scan
   await fullScan(relayApi, assetHubApi, peopleApi, noterKeypair);
+  await finalizeMaturedPending(peopleApi, noterKeypair);
 
   // Start event listener for real-time processing
   await startEventListener(relayApi, assetHubApi, peopleApi, noterKeypair);
@@ -494,9 +534,11 @@ async function main() {
   // Schedule periodic full scans
   log('INFO', `Periodic scan scheduled every ${SCAN_INTERVAL / 1000}s`);
   setInterval(() => {
-    fullScan(relayApi, assetHubApi, peopleApi, noterKeypair).catch(err => {
-      log('ERROR', 'Periodic scan failed', { error: err.message });
-    });
+    fullScan(relayApi, assetHubApi, peopleApi, noterKeypair)
+      .then(() => finalizeMaturedPending(peopleApi, noterKeypair))
+      .catch(err => {
+        log('ERROR', 'Periodic scan failed', { error: err.message });
+      });
   }, SCAN_INTERVAL);
 }
 
