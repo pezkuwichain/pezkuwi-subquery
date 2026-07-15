@@ -233,12 +233,31 @@ function hasDataChanged(fresh, cached) {
 // ========================================
 
 /**
+ * Serializes every real submission through this queue. fullScan() fires up to BATCH_SIZE
+ * processAccount() calls concurrently (by design, for the read-only data-gathering they start
+ * with), and the live event listener can also submit at any time - without this, multiple
+ * signAndSend() calls from the same noter keypair can land close enough together that the API's
+ * nonce bookkeeping races, producing duplicate-nonce transactions the pool then rejects as
+ * "Priority is too low ... already in the pool" (observed: 37 of 50 accounts silently dropped in
+ * a single scan). One in-flight submission at a time, in call order, removes the race entirely
+ * regardless of which caller is submitting.
+ */
+let submitQueue = Promise.resolve();
+
+/**
  * Submit receive_staking_details for one or more (address, source) pairs.
  * Batches multiple calls into a single utility.batchAll transaction.
  */
-async function submitStakingDetails(peopleApi, noterKeypair, updates) {
-  if (updates.length === 0) return;
+function submitStakingDetails(peopleApi, noterKeypair, updates) {
+  if (updates.length === 0) return Promise.resolve();
 
+  const task = submitQueue.then(() => doSubmitStakingDetails(peopleApi, noterKeypair, updates));
+  // Never let one caller's failure poison the queue for the next caller's submission.
+  submitQueue = task.catch(() => {});
+  return task;
+}
+
+function doSubmitStakingDetails(peopleApi, noterKeypair, updates) {
   const calls = updates.map(({ address, source, data }) =>
     peopleApi.tx.stakingScore.receiveStakingDetails(
       address,
