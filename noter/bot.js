@@ -52,7 +52,7 @@ const STALE_AFTER = SCAN_INTERVAL * 3;
 
 function touchHeartbeat() {
   try {
-    require('fs').writeFileSync(HEARTBEAT_FILE, String(Date.now()));
+    fs.writeFileSync(HEARTBEAT_FILE, String(Date.now()));
   } catch (err) {
     log('WARN', 'Could not write heartbeat', { error: err.message });
   }
@@ -62,7 +62,7 @@ function touchHeartbeat() {
 /// yet — an unwritable or missing heartbeat counts as stale rather than healthy.
 function heartbeatAge() {
   try {
-    const t = Number(require('fs').readFileSync(HEARTBEAT_FILE, 'utf8'));
+    const t = Number(fs.readFileSync(HEARTBEAT_FILE, 'utf8'));
     return Number.isFinite(t) ? Date.now() - t : Infinity;
   } catch {
     return Infinity;
