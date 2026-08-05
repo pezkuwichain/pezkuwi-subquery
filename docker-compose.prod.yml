@@ -154,10 +154,25 @@ services:
       - noter_mnemonic
     environment:
       TZ: UTC
-      RELAY_RPC: ws://217.77.6.126:9944
-      ASSET_HUB_RPC: ws://217.77.6.126:40944
-      PEOPLE_RPC: ws://217.77.6.126:41944
+      # The block-producing nodes bind their RPC to localhost by design — reaching
+      # them from here needed the ports open to the internet, and closing them (as
+      # they should be) silently cut this bot off from every chain. These are the
+      # public endpoints, which is what an external client is supposed to use, and
+      # they are TLS-terminated rather than plaintext ws:// across the internet.
+      RELAY_RPC: wss://rpc.pezkuwichain.io
+      ASSET_HUB_RPC: wss://asset-hub-rpc.pezkuwichain.io
+      PEOPLE_RPC: wss://people-rpc.pezkuwichain.io
       SCAN_INTERVAL_MS: "300000"
+    # The bot writes a heartbeat when a scan completes, not when it merely stays
+    # up: an endless reconnect loop kept the container "Up" for three weeks while
+    # no staking data reached the People chain.
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('fs');const i=parseInt(process.env.SCAN_INTERVAL_MS||'300000',10);let t=0;try{t=Number(fs.readFileSync(process.env.HEARTBEAT_FILE||'/tmp/noter-heartbeat','utf8'))}catch{};process.exit(Number.isFinite(t)&&Date.now()-t<i*3?0:1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      # The first scan has to walk every tracked account before it can report.
+      start_period: 10m
 
   payout-bot:
     container_name: payout-pezkuwi

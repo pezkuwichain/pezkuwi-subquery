@@ -33,9 +33,41 @@ const PEOPLE_RPC   = process.env.PEOPLE_RPC   || 'wss://people-rpc.pezkuwichain.
 const SCAN_INTERVAL = parseInt(process.env.SCAN_INTERVAL_MS || '300000', 10); // 5 min
 const UNITS = BigInt('1000000000000'); // 10^12
 
+// Liveness. A scan that throws is logged and retried, which is right — a chain can
+// be briefly unreachable. What is not right is doing that forever in silence: this
+// bot once spent three weeks reconnecting to endpoints that had been closed, while
+// every tracked account's staking score sat at zero. `staking_score` gates the whole
+// trust score, so a mute noter is not a degraded service, it is a wrong answer for
+// every citizen.
+//
+// The heartbeat records the last scan that actually completed. The container
+// healthcheck reads it, and the watchdog below exits once it goes stale, so the
+// restart policy turns a silent stall into a visibly crash-looping container.
+const HEARTBEAT_FILE = process.env.HEARTBEAT_FILE || '/tmp/noter-heartbeat';
+const STALE_AFTER = SCAN_INTERVAL * 3;
+
 // ========================================
 // LOGGING
 // ========================================
+
+function touchHeartbeat() {
+  try {
+    require('fs').writeFileSync(HEARTBEAT_FILE, String(Date.now()));
+  } catch (err) {
+    log('WARN', 'Could not write heartbeat', { error: err.message });
+  }
+}
+
+/// Milliseconds since the last completed scan, or `Infinity` if none has completed
+/// yet — an unwritable or missing heartbeat counts as stale rather than healthy.
+function heartbeatAge() {
+  try {
+    const t = Number(require('fs').readFileSync(HEARTBEAT_FILE, 'utf8'));
+    return Number.isFinite(t) ? Date.now() - t : Infinity;
+  } catch {
+    return Infinity;
+  }
+}
 
 function log(level, msg, data) {
   const ts = new Date().toISOString();
@@ -563,6 +595,7 @@ async function main() {
   // already been promoted to CachedStakingDetails this cycle.
   await finalizeMaturedPending(peopleApi, noterKeypair);
   await fullScan(relayApi, assetHubApi, peopleApi, noterKeypair);
+  touchHeartbeat();
 
   // Start event listener for real-time processing
   await startEventListener(relayApi, assetHubApi, peopleApi, noterKeypair);
@@ -572,10 +605,25 @@ async function main() {
   setInterval(() => {
     finalizeMaturedPending(peopleApi, noterKeypair)
       .then(() => fullScan(relayApi, assetHubApi, peopleApi, noterKeypair))
+      .then(() => touchHeartbeat())
       .catch(err => {
         log('ERROR', 'Periodic scan failed', { error: err.message });
       });
   }, SCAN_INTERVAL);
+
+  // Exiting is the point. Reconnecting forever looks like the bot is coping; a
+  // container that keeps dying does not, and the restart policy makes that
+  // visible in `docker ps` without anyone having to read the logs.
+  setInterval(() => {
+    const age = heartbeatAge();
+    if (age > STALE_AFTER) {
+      log('ERROR', 'No scan completed within the staleness window — exiting so the restart policy takes over', {
+        stale_for_ms: Number.isFinite(age) ? age : null,
+        stale_after_ms: STALE_AFTER,
+      });
+      process.exit(1);
+    }
+  }, Math.min(SCAN_INTERVAL, 60_000)).unref?.();
 }
 
 main().catch(err => {
