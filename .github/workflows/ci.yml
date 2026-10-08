@@ -37,6 +37,7 @@ jobs:
   # with every key type, and the bot must load its whole module graph and stop
   # only where it reads the mnemonic that CI does not have.
   bots:
+    name: bots (${{ matrix.bot }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -55,6 +56,13 @@ jobs:
 
       - name: Build the image
         run: docker build -t bot ${{ matrix.bot }}
+
+      # Dependency Review allows these GPL-3.0 packages in the lockfiles only
+      # because no image installs them; this is the check that keeps it true.
+      - name: No light client in the image
+        run: |
+          docker run --rm bot sh -c '! [ -e node_modules/@bizinikiwi ] && ! [ -e node_modules/smoldot ]' || {
+            echo "the image installs the light client; it must be built with --omit=optional"; exit 1; }
 
       - name: Crypto stack
         run: docker run --rm -v "$PWD/scripts/bot-smoke.mjs:/app/bot-smoke.mjs:ro" bot node bot-smoke.mjs ${{ matrix.mode }}
