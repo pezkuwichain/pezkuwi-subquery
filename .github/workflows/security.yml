@@ -56,6 +56,13 @@ jobs:
         with:
           fail-on-severity: high
           deny-licenses: GPL-3.0, AGPL-3.0
+          # The light client is an optional dependency of @pezkuwi/rpc-provider,
+          # so it is listed in the bots' lockfiles, but their images are built
+          # with --omit=optional and never contain it (checked in ci.yml, bots).
+          allow-dependencies-licenses: >-
+            pkg:npm/@bizinikiwi/connect,
+            pkg:npm/@bizinikiwi/connect-extension-protocol,
+            pkg:npm/@bizinikiwi/connect-known-chains
 
   secret-scan:
     name: Secret Scan
