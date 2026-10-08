@@ -30,3 +30,43 @@ jobs:
 
       - name: Build
         run: ./node_modules/.bin/subql build pezkuwi.yaml
+
+  # The noter and payout bots ship as their own images (docker-compose.prod.yml)
+  # and nothing else here builds or runs them. Build each image as production
+  # does, then run inside it: the crypto stack must be the locked one and sign
+  # with every key type, and the bot must load its whole module graph and stop
+  # only where it reads the mnemonic that CI does not have.
+  bots:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - bot: noter
+            mode: esm
+            expect: 'No noter mnemonic found'
+          - bot: payout-bot
+            mode: cjs
+            expect: "ENOENT: no such file or directory, open '/run/secrets/payout_mnemonic'"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t bot ${{ matrix.bot }}
+
+      - name: Crypto stack
+        run: docker run --rm -v "$PWD/scripts/bot-smoke.mjs:/app/bot-smoke.mjs:ro" bot node bot-smoke.mjs ${{ matrix.mode }}
+
+      - name: The bot loads and stops at its missing mnemonic
+        env:
+          EXPECT: ${{ matrix.expect }}
+        run: |
+          set +e
+          out=$(timeout 60 docker run --rm bot 2>&1)
+          code=$?
+          set -e
+          echo "$out"
+          [ "$code" -ne 0 ] && [ "$code" -ne 124 ] || { echo "expected the bot to exit with an error, got $code"; exit 1; }
+          grep -qF "$EXPECT" <<<"$out" || { echo "expected: $EXPECT"; exit 1; }
