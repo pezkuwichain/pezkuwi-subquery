@@ -1,0 +1,16 @@
+{
+  "name": "pezkuwi-payout-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Payout bot: claims staking rewards for every validator in completed eras on Asset Hub",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "@pezkuwi/api": "^16.5.37",
+    "@pezkuwi/keyring": "^14.0.26",
+    "@pezkuwi/util": "^14.0.26",
+    "@pezkuwi/util-crypto": "^14.0.26"
+  }
+}

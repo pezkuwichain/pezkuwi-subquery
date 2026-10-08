@@ -1,9 +1,13 @@
-FROM node:20-alpine
+FROM node:24-alpine
+
 WORKDIR /app
-RUN npm install \
-    @pezkuwi/api@^16.5.36 \
-    @pezkuwi/keyring@^14.0.25 \
-    @pezkuwi/util@^14.0.25 \
-    @pezkuwi/util-crypto@^14.0.25
+
+# Install exactly what package-lock.json records, so the image runs the
+# versions that were reviewed and tested rather than whatever the ranges
+# resolve to on the day it is built.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
 COPY bot.js ./
+
 CMD ["node", "bot.js"]
