@@ -1,0 +1,44 @@
+#!/bin/bash
+# Brings /opt/subquery to a commit of main and rebuilds and restarts the
+# compose stack (indexers, noter and payout bots). Installed root-owned at
+# /usr/local/sbin/subquery-deploy; reached only through subquery-deploy-ssh.
+#
+# The host keeps local edits to tracked files (the indexer manifests point at
+# a host-specific endpoint). They are stashed for the pull and always put
+# back, whether the deploy succeeds or not. Only tracked files are stashed:
+# stashing untracked ones too (.yarn/, which yarn install recreates) made
+# every pop fail half-way and left a stash entry behind on each deploy.
+set -euo pipefail
+
+SHA="${1:-}"
+if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "subquery-deploy: expected the 40-character commit SHA to deploy" >&2
+  exit 2
+fi
+
+cd /opt/subquery
+
+stashed=
+if ! git diff --quiet; then
+  git stash push -q -m "subquery-deploy $SHA"
+  stashed=1
+fi
+restore () {
+  if [ -n "$stashed" ]; then
+    git stash pop -q || echo "subquery-deploy: could not restore the host's local edits; they are in 'git stash list'" >&2
+  fi
+}
+trap restore EXIT
+
+git fetch -q origin main
+# Deploy exactly what CI tested, and only a commit that is on main.
+git merge-base --is-ancestor "$SHA" origin/main || { echo "subquery-deploy: $SHA is not on main" >&2; exit 1; }
+git merge -q --ff-only origin/main
+[ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "subquery-deploy: main is at $(git rev-parse --short HEAD), not ${SHA:0:7}; a newer deploy will follow" >&2; exit 1; }
+
+yarn install --frozen-lockfile
+./node_modules/.bin/subql codegen pezkuwi-governance.yaml
+./node_modules/.bin/subql build pezkuwi.yaml
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d
+echo "subquery-deploy: deployed ${SHA:0:7}"

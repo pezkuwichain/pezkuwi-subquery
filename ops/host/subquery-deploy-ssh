@@ -1,0 +1,18 @@
+#!/bin/bash
+# Forced command for the subquery deploy key, installed root-owned at
+# /usr/local/sbin/subquery-deploy-ssh:
+#
+#   restrict,command="/usr/local/sbin/subquery-deploy-ssh" ssh-ed25519 ...
+#
+# CI runs `ssh subquery-deploy@<host> <commit sha>`. The SHA is the only
+# input; subquery-deploy, which sudo lets this user run and nothing else,
+# does the work.
+set -euo pipefail
+
+SHA="${SSH_ORIGINAL_COMMAND:-}"
+if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "subquery-deploy-ssh: expected the 40-character commit SHA to deploy" >&2
+  exit 2
+fi
+
+exec sudo -n /usr/local/sbin/subquery-deploy "$SHA"
