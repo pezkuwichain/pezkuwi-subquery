@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '18'
 
@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Build the image
         run: docker build -t bot ${{ matrix.bot }}
@@ -78,3 +78,14 @@ jobs:
           echo "$out"
           [ "$code" -ne 0 ] && [ "$code" -ne 124 ] || { echo "expected the bot to exit with an error, got $code"; exit 1; }
           grep -qF "$EXPECT" <<<"$out" || { echo "expected: $EXPECT"; exit 1; }
+
+  # The scripts the deploy key is pinned to are the whole of what CI can do on
+  # the host, so they are checked with every change.
+  host-scripts:
+    name: Host deploy scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: |
+          shellcheck -S warning ops/host/subquery-deploy ops/host/subquery-deploy-ssh ops/host/test-deploy.sh
+          bash ops/host/test-deploy.sh

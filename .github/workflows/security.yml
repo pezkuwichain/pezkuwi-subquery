@@ -18,10 +18,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '18'
 
@@ -49,20 +49,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
           deny-licenses: GPL-3.0, AGPL-3.0
           # The light client is an optional dependency of @pezkuwi/rpc-provider,
           # so it is listed in the bots' lockfiles, but their images are built
           # with --omit=optional and never contain it (checked in ci.yml, bots).
+          # TruffleHog (AGPL-3.0) is the secret scanner this workflow runs; it
+          # executes in CI and is never shipped, served or distributed.
           allow-dependencies-licenses: >-
             pkg:npm/@bizinikiwi/connect,
             pkg:npm/@bizinikiwi/connect-extension-protocol,
-            pkg:npm/@bizinikiwi/connect-known-chains
+            pkg:npm/@bizinikiwi/connect-known-chains,
+            pkg:githubactions/trufflesecurity/trufflehog
 
   secret-scan:
     name: Secret Scan
@@ -70,12 +73,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: TruffleHog Secret Scan
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@e76dff8a7e57d6df0c60ad8cbf5d5cba505a8fc9 # v3.99.2
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}

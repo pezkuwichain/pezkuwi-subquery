@@ -2,24 +2,31 @@ name: Deploy to VPS
 on:
   push:
     branches: [main]
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # The deploy key is pinned on the host to ops/host/subquery-deploy-ssh
+      # (authorized_keys restrict,command=): the commit SHA is its only input.
+      # subquery-deploy, run through sudo, brings /opt/subquery to exactly that
+      # commit of main, keeps the host's local edits, and rebuilds the stack.
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: root
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/subquery
-            git stash --include-untracked || true
-            git pull origin main
-            yarn install --frozen-lockfile
-            ./node_modules/.bin/subql codegen pezkuwi-governance.yaml
-            ./node_modules/.bin/subql build pezkuwi.yaml
-            docker compose -f docker-compose.prod.yml build
-            docker compose -f docker-compose.prod.yml up -d
-            git stash pop || true
+        env:
+          DEPLOY_KEY: ${{ secrets.SUBQUERY_DEPLOY_KEY }}
+          # subquery1's host key, read from the host itself; any other key fails.
+          KNOWN_HOST: "158.220.93.26 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINtnaMWZ0RZDD6yt+6WdtU/rpEz4pyHmo7otkbmgTpkA"
+        run: |
+          umask 077
+          printf '%s\n' "$DEPLOY_KEY" > "$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$KNOWN_HOST" > "$RUNNER_TEMP/known_hosts"
+          ssh -i "$RUNNER_TEMP/deploy_key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
+            subquery-deploy@158.220.93.26 "$GITHUB_SHA"
