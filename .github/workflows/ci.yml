@@ -17,7 +17,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Enable Corepack
         run: corepack enable
@@ -30,6 +30,16 @@ jobs:
 
       - name: Build
         run: ./node_modules/.bin/subql build pezkuwi.yaml
+
+      # Dependency Review allows the @subql packages because the mapping imports
+      # only their types; this is the check that keeps it true. A type-only
+      # import is erased on emit, a value import survives as a require.
+      - name: The mapping imports no @subql code
+        run: |
+          out=$(mktemp -d)
+          ./node_modules/.bin/tsc -p tsconfig.json --outDir "$out" --declaration false
+          ! grep -rn 'require("@subql/' "$out" || {
+            echo "the mapping imports @subql code; import its types with 'import type' or drop it"; exit 1; }
 
   # The noter and payout bots ship as their own images (docker-compose.prod.yml)
   # and nothing else here builds or runs them. Build each image as production
@@ -78,6 +88,26 @@ jobs:
           echo "$out"
           [ "$code" -ne 0 ] && [ "$code" -ne 124 ] || { echo "expected the bot to exit with an error, got $code"; exit 1; }
           grep -qF "$EXPECT" <<<"$out" || { echo "expected: $EXPECT"; exit 1; }
+
+  # The indexers run docker/Dockerfile.node (docker-compose.prod.yml). Build it
+  # as production does: the patch step fails the build if a pattern no longer
+  # matches. Then the aliased crypto stack must be the locked one and sign with
+  # every key type, and subql-node must load.
+  indexer:
+    name: Indexer image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Build the image
+        run: docker build -f docker/Dockerfile.node -t indexer .
+
+      - name: Crypto stack
+        run: docker run --rm --entrypoint node -v "$PWD/scripts/bot-smoke.mjs:/app/bot-smoke.mjs:ro" indexer /app/bot-smoke.mjs indexer
+
+      - name: subql-node loads
+        run: docker run --rm indexer --help >/dev/null
 
   # The scripts the deploy key is pinned to are the whole of what CI can do on
   # the host, so they are checked with every change.
