@@ -40,8 +40,15 @@ jobs:
             exit 0
           fi
 
+          # CI finishing does not mean every required check has: Code Quality,
+          # Security and CodeQL may still be running. Merge now if the branch
+          # rules allow it, otherwise let GitHub merge once they pass.
           echo "Merging PR #$PR_NUMBER"
           gh pr merge "$PR_NUMBER" \
             --repo "$GITHUB_REPOSITORY" \
             --merge \
-            --delete-branch=false
+            --delete-branch=false \
+          || gh pr merge "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --merge \
+            --auto
