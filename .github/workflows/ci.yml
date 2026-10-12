@@ -31,6 +31,16 @@ jobs:
       - name: Build
         run: ./node_modules/.bin/subql build pezkuwi.yaml
 
+      # Dependency Review allows the @subql packages because the mapping imports
+      # only their types; this is the check that keeps it true. A type-only
+      # import is erased on emit, a value import survives as a require.
+      - name: The mapping imports no @subql code
+        run: |
+          out=$(mktemp -d)
+          ./node_modules/.bin/tsc -p tsconfig.json --outDir "$out" --declaration false
+          ! grep -rn 'require("@subql/' "$out" || {
+            echo "the mapping imports @subql code; import its types with 'import type' or drop it"; exit 1; }
+
   # The noter and payout bots ship as their own images (docker-compose.prod.yml)
   # and nothing else here builds or runs them. Build each image as production
   # does, then run inside it: the crypto stack must be the locked one and sign

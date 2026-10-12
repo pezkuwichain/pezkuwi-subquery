@@ -61,10 +61,22 @@ jobs:
           # with --omit=optional and never contain it (checked in ci.yml, bots).
           # TruffleHog (AGPL-3.0) is the secret scanner this workflow runs; it
           # executes in CI and is never shipped, served or distributed.
+          # The @subql packages make up the SubQuery indexer that runs the
+          # mapping; the mapping imports only their types, so the bundle this
+          # repo builds carries none of their code (checked in ci.yml, build).
           allow-dependencies-licenses: >-
             pkg:npm/@bizinikiwi/connect,
             pkg:npm/@bizinikiwi/connect-extension-protocol,
             pkg:npm/@bizinikiwi/connect-known-chains,
+            pkg:npm/@subql/cli,
+            pkg:npm/@subql/common,
+            pkg:npm/@subql/common-substrate,
+            pkg:npm/@subql/node,
+            pkg:npm/@subql/node-core,
+            pkg:npm/@subql/testing,
+            pkg:npm/@subql/types,
+            pkg:npm/@subql/types-core,
+            pkg:npm/@subql/utils,
             pkg:githubactions/trufflesecurity/trufflehog
 
   secret-scan:
