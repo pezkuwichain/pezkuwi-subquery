@@ -13,6 +13,16 @@
 const fs = require("fs");
 let count = 0;
 
+// A pattern that matches nothing means the patched package changed shape and
+// the fallback is gone; stop the image build instead of shipping without it.
+function report(label) {
+  console.log(`${label}: ${count} patches`);
+  if (count === 0) {
+    console.error(`${label}: pattern not found`);
+    process.exit(1);
+  }
+}
+
 // --- Patch 1: @subql/node base-runtime.service.js ---
 // getSpecFromApi() and getRuntimeVersion() call
 // this.api.rpc.state.getRuntimeVersion(parentBlockHash)
@@ -24,7 +34,7 @@ runtimeCode = runtimeCode.replace(
   (m, v) => { count++; return `await this.api.rpc.state.getRuntimeVersion(${v}).catch(() => this.api.rpc.state.getRuntimeVersion())`; }
 );
 fs.writeFileSync(runtimeFile, runtimeCode);
-console.log(`[1/4] base-runtime.service.js: ${count} patches`);
+report("[1/4] base-runtime.service.js");
 
 // --- Patch 2: @subql/node utils/substrate.js ---
 // fetchRuntimeVersionRange() catches and rethrows; add fallback before rethrow
@@ -37,7 +47,7 @@ utilsCode = utilsCode.replace(
   () => { count++; return "api.rpc.state.getRuntimeVersion(hash).catch(() => api.rpc.state.getRuntimeVersion()).catch((e)"; }
 );
 fs.writeFileSync(utilsFile, utilsCode);
-console.log(`[2/4] utils/substrate.js: ${count} patches`);
+report("[2/4] utils/substrate.js");
 
 // --- Patch 3: @polkadot/api Init.js ---
 // _getBlockRegistryViaHash calls getRuntimeVersion.raw(header.parentHash)
@@ -51,7 +61,7 @@ initCode = initCode.replace(
   () => { count++; return "await (0, rxjs_1.firstValueFrom)(this._rpcCore.state.getRuntimeVersion.raw(header.parentHash)).catch(() => (0, rxjs_1.firstValueFrom)(this._rpcCore.state.getRuntimeVersion()))"; }
 );
 fs.writeFileSync(initFile, initCode);
-console.log(`[3/4] @polkadot/api Init.js: ${count} patches`);
+report("[3/4] @polkadot/api Init.js");
 
 // --- Patch 4: @subql/node utils/substrate.js (fetchEventsRange) ---
 // When events.at(hash) fails with "State already discarded" for pruned blocks,
@@ -64,7 +74,7 @@ utilsCode2 = utilsCode2.replace(
   () => { count++; return "api.query.system.events.at(hash).catch((e) => { if (e.message && e.message.includes('State already discarded')) { const empty = []; empty.toArray = () => []; return empty; }"; }
 );
 fs.writeFileSync(utilsFile, utilsCode2);
-console.log(`[4/5] utils/substrate.js fetchEventsRange: ${count} patches`);
+report("[4/5] utils/substrate.js fetchEventsRange");
 
 // --- Patch 5: @subql/node utils/substrate.js (wrapExtrinsics / getExtrinsicSuccess) ---
 // When events are empty (pruned block), groupEventsByExtrinsic returns {}.
@@ -80,7 +90,7 @@ utilsCode3 = utilsCode3.replace(
   () => { count++; return "function getExtrinsicSuccess(events) { if (!events || !events.findIndex) return false;"; }
 );
 fs.writeFileSync(utilsFile, utilsCode3);
-console.log(`[5/7] utils/substrate.js getExtrinsicSuccess: ${count} patches`);
+report("[5/7] utils/substrate.js getExtrinsicSuccess");
 
 // --- Patch 6: @subql/node utils/substrate.js (events.toArray fallback) ---
 // When events is undefined or has no toArray method, default to empty array.
@@ -91,6 +101,6 @@ utilsCode4 = utilsCode4.replace(
   () => { count++; return "const wrappedBlock = wrapBlock(block, (events && events.toArray) ? events.toArray() : [], parentSpecVersion);"; }
 );
 fs.writeFileSync(utilsFile, utilsCode4);
-console.log(`[6/7] utils/substrate.js events.toArray: ${count} patches`);
+report("[6/7] utils/substrate.js events.toArray");
 
 console.log("[7/7] All pruned-state patches applied successfully.");

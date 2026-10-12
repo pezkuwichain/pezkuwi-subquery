@@ -1,31 +1,13 @@
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
-# Install @subql/node with @polkadot aliased to @pezkuwi
-RUN npm init -y && \
-    npm install @subql/node \
-    @polkadot/api@npm:@pezkuwi/api@^16.5.36 \
-    @polkadot/api-augment@npm:@pezkuwi/api-augment@^16.5.36 \
-    @polkadot/api-derive@npm:@pezkuwi/api-derive@^16.5.36 \
-    @polkadot/types@npm:@pezkuwi/types@^16.5.36 \
-    @polkadot/types-augment@npm:@pezkuwi/types-augment@^16.5.36 \
-    @polkadot/types-codec@npm:@pezkuwi/types-codec@^16.5.36 \
-    @polkadot/types-create@npm:@pezkuwi/types-create@^16.5.36 \
-    @polkadot/types-known@npm:@pezkuwi/types-known@^16.5.36 \
-    @polkadot/rpc-core@npm:@pezkuwi/rpc-core@^16.5.36 \
-    @polkadot/rpc-provider@npm:@pezkuwi/rpc-provider@^16.5.36 \
-    @polkadot/rpc-augment@npm:@pezkuwi/rpc-augment@^16.5.36 \
-    @polkadot/util@npm:@pezkuwi/util@^14.0.25 \
-    @polkadot/util-crypto@npm:@pezkuwi/util-crypto@^14.0.25 \
-    @polkadot/keyring@npm:@pezkuwi/keyring@^14.0.25 \
-    @polkadot/networks@npm:@pezkuwi/networks@^14.0.25 \
-    @polkadot/wasm-crypto@npm:@pezkuwi/wasm-crypto@^7.5.18 \
-    @polkadot/wasm-crypto-wasm@npm:@pezkuwi/wasm-crypto-wasm@^7.5.17 \
-    @polkadot/wasm-util@npm:@pezkuwi/wasm-util@^7.5.17 \
-    @polkadot/wasm-bridge@npm:@pezkuwi/wasm-bridge@^7.5.17 \
-    @polkadot/wasm-crypto-asmjs@npm:@pezkuwi/wasm-crypto-asmjs@^7.5.17 \
-    @polkadot/wasm-crypto-init@npm:@pezkuwi/wasm-crypto-init@^7.5.17
+# @subql/node with @polkadot aliased to @pezkuwi. The tree is locked in
+# docker/indexer so every build installs the same packages (and Dependabot
+# can see them); without the lock a cached layer kept whatever was current
+# the day it was first built.
+COPY docker/indexer/package.json docker/indexer/package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 # @subql/node requires '@polkadot/api-augment/substrate' but @pezkuwi uses
 # chain-specific paths (./pezkuwi, ./bizinikiwi). Patch the exports map in

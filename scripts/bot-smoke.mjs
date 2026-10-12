@@ -3,7 +3,10 @@
 // verify with every key type. A stack that only loads is not enough: the broken
 // @pezkuwi/wasm-crypto 7.5.17 loaded fine and failed at ed25519 and ecdsa.
 //
-//   node bot-smoke.mjs <esm|cjs>
+//   node bot-smoke.mjs <esm|cjs|indexer>
+//
+// indexer: the subql-node image, which loads @pezkuwi through @polkadot aliases
+// (CommonJS); the aliases are checked against the lock too.
 
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -25,17 +28,25 @@ function check (name, ok, detail = '') {
 
 const lock = JSON.parse(fs.readFileSync(path.join(dir, 'package-lock.json'), 'utf8'));
 
-for (const name of ['@pezkuwi/wasm-crypto', '@pezkuwi/util-crypto', '@pezkuwi/api', '@pezkuwi/keyring']) {
+const scope = mode === 'indexer' ? '@polkadot' : '@pezkuwi';
+const locked = ['@pezkuwi/wasm-crypto', '@pezkuwi/util-crypto', '@pezkuwi/api', '@pezkuwi/keyring'];
+
+if (mode === 'indexer') {
+  locked.push('@polkadot/wasm-crypto', '@polkadot/util-crypto', '@polkadot/api', '@polkadot/keyring');
+}
+
+for (const name of locked) {
   const want = lock.packages[`node_modules/${name}`]?.version;
   const have = JSON.parse(fs.readFileSync(path.join(dir, 'node_modules', name, 'package.json'), 'utf8')).version;
 
   check(`${name} is the locked version`, !!want && want === have, `lock ${want}, installed ${have}`);
 }
 
-// Load the stack the way the bot does: the noter is an ES module, the payout
-// bot is CommonJS.
-const { Keyring } = mode === 'cjs' ? require('@pezkuwi/api') : await import('@pezkuwi/api');
-const { cryptoWaitReady, mnemonicGenerate } = mode === 'cjs' ? require('@pezkuwi/util-crypto') : await import('@pezkuwi/util-crypto');
+// Load the stack the way the image does: the noter is an ES module, the payout
+// bot and subql-node are CommonJS.
+const load = (name) => mode === 'esm' ? import(`${scope}/${name}`) : require(`${scope}/${name}`);
+const { Keyring } = await load('api');
+const { cryptoWaitReady, mnemonicGenerate } = await load('util-crypto');
 
 check('crypto initialises', await cryptoWaitReady());
 
@@ -61,5 +72,5 @@ for (const type of ['sr25519', 'ed25519', 'ecdsa']) {
   }
 }
 
-console.log(failed ? `FAILED: ${failed}` : 'all bot smoke checks passed');
+console.log(failed ? `FAILED: ${failed}` : `all ${mode} smoke checks passed`);
 process.exit(failed ? 1 : 0);
