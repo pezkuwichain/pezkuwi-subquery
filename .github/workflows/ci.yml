@@ -77,6 +77,11 @@ jobs:
       - name: Crypto stack
         run: docker run --rm -v "$PWD/scripts/bot-smoke.mjs:/app/bot-smoke.mjs:ro" bot node bot-smoke.mjs ${{ matrix.mode }}
 
+      # Run inside the image, so the modules under test are the ones the image ships.
+      - name: Unit tests
+        if: matrix.bot == 'noter'
+        run: docker run --rm -v "$PWD/noter/test:/app/test:ro" bot node --test test/submit.test.mjs
+
       - name: The bot loads and stops at its missing mnemonic
         env:
           EXPECT: ${{ matrix.expect }}

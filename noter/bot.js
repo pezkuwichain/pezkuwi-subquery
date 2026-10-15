@@ -22,6 +22,7 @@ import { ApiPromise, WsProvider } from '@pezkuwi/api';
 import { Keyring } from '@pezkuwi/keyring';
 import { cryptoWaitReady } from '@pezkuwi/util-crypto';
 import fs from 'fs';
+import { watchSubmission, isStale } from './submit.js';
 
 // ========================================
 // CONFIGURATION
@@ -45,6 +46,11 @@ const UNITS = BigInt('1000000000000'); // 10^12
 // restart policy turns a silent stall into a visibly crash-looping container.
 const HEARTBEAT_FILE = process.env.HEARTBEAT_FILE || '/tmp/noter-heartbeat';
 const STALE_AFTER = SCAN_INTERVAL * 3;
+const STARTED_AT = Date.now();
+// How long one submission may wait for a block before it is given up on. Every submission
+// waits behind the previous one, so this bounds how long a single lost extrinsic can hold
+// up all the reports queued after it.
+const SUBMIT_TIMEOUT = parseInt(process.env.SUBMIT_TIMEOUT_MS || '120000', 10);
 
 // ========================================
 // LOGGING
@@ -58,14 +64,14 @@ function touchHeartbeat() {
   }
 }
 
-/// Milliseconds since the last completed scan, or `Infinity` if none has completed
-/// yet — an unwritable or missing heartbeat counts as stale rather than healthy.
-function heartbeatAge() {
+/// When the last scan completed, or `NaN` if none has — a missing or unreadable heartbeat.
+/// A heartbeat left by an earlier process in the same container is older than
+/// `STARTED_AT`, so `isStale` does not let it count for this one.
+function lastScanAt() {
   try {
-    const t = Number(fs.readFileSync(HEARTBEAT_FILE, 'utf8'));
-    return Number.isFinite(t) ? Date.now() - t : Infinity;
+    return Number(fs.readFileSync(HEARTBEAT_FILE, 'utf8'));
   } catch {
-    return Infinity;
+    return NaN;
   }
 }
 
@@ -317,26 +323,22 @@ function queueSubmit(peopleApi, noterKeypair, tx, description) {
 }
 
 function doSignAndSend(peopleApi, noterKeypair, tx, description) {
-  return new Promise((resolve, reject) => {
-    tx.signAndSend(noterKeypair, ({ status, dispatchError }) => {
-      if (status.isInBlock) {
-        if (dispatchError) {
-          let errMsg = dispatchError.toString();
-          if (dispatchError.isModule) {
-            try {
-              const decoded = peopleApi.registry.findMetaError(dispatchError.asModule);
-              errMsg = `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
-            } catch { /* use default */ }
-          }
-          log('ERROR', 'TX failed', { description, error: errMsg, block: status.asInBlock.toHex() });
-          reject(new Error(errMsg));
-        } else {
-          log('INFO', `TX success: ${description}`, { block: status.asInBlock.toHex() });
-          resolve();
-        }
-      }
-    }).catch(reject);
-  });
+  const decodeError = (dispatchError) => {
+    if (dispatchError.isModule) {
+      try {
+        const decoded = peopleApi.registry.findMetaError(dispatchError.asModule);
+        return `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+      } catch { /* use default */ }
+    }
+    return dispatchError.toString();
+  };
+  return watchSubmission(tx, noterKeypair, { decodeError, timeoutMs: SUBMIT_TIMEOUT }).then(
+    (block) => log('INFO', `TX success: ${description}`, { block }),
+    (err) => {
+      log('ERROR', 'TX failed', { description, error: err.message });
+      throw err;
+    },
+  );
 }
 
 /**
@@ -400,6 +402,11 @@ async function finalizeMaturedPending(peopleApi, noterKeypair) {
 // ========================================
 
 async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address) {
+  // The chain refuses a noter's report about themselves (`NoterCannotAttestSelf`), so a
+  // noter that has opted in itself failed on that account in every scan. Its stake has to
+  // come from another noter; compared as account ids, since the address format may differ.
+  if (peopleApi.createType('AccountId', address).eq(noterKeypair.publicKey)) return 0;
+
   const updates = [];
 
   // 1. Collect ALL staking data first (direct + pool) before comparing
@@ -559,6 +566,24 @@ async function main() {
   // Wait for crypto WASM to be ready
   await cryptoWaitReady();
 
+  // Exiting is the point. Reconnecting forever looks like the bot is coping; a
+  // container that keeps dying does not, and the restart policy makes that
+  // visible in `docker ps` without anyone having to read the logs.
+  //
+  // Armed before anything that can hang — connecting, the first scan — and counted
+  // from the start of this process until a scan completes. Armed after the first
+  // scan, it never ran on a process whose first scan hung.
+  setInterval(() => {
+    const last = lastScanAt();
+    if (isStale({ lastScanAt: last, startedAt: STARTED_AT, now: Date.now(), staleAfter: STALE_AFTER })) {
+      log('ERROR', 'No scan completed within the staleness window — exiting so the restart policy takes over', {
+        last_scan_at: Number.isFinite(last) && last >= STARTED_AT ? new Date(last).toISOString() : null,
+        stale_after_ms: STALE_AFTER,
+      });
+      process.exit(1);
+    }
+  }, Math.min(SCAN_INTERVAL, 60_000)).unref?.();
+
   // Load noter keypair
   const mnemonic = loadNoterMnemonic();
   const keyring = new Keyring({ type: 'sr25519' });
@@ -611,19 +636,6 @@ async function main() {
       });
   }, SCAN_INTERVAL);
 
-  // Exiting is the point. Reconnecting forever looks like the bot is coping; a
-  // container that keeps dying does not, and the restart policy makes that
-  // visible in `docker ps` without anyone having to read the logs.
-  setInterval(() => {
-    const age = heartbeatAge();
-    if (age > STALE_AFTER) {
-      log('ERROR', 'No scan completed within the staleness window — exiting so the restart policy takes over', {
-        stale_for_ms: Number.isFinite(age) ? age : null,
-        stale_after_ms: STALE_AFTER,
-      });
-      process.exit(1);
-    }
-  }, Math.min(SCAN_INTERVAL, 60_000)).unref?.();
 }
 
 main().catch(err => {
