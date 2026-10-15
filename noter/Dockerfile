@@ -10,6 +10,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --omit=optional --no-audit --no-fund
 
-COPY bot.js ./
+COPY bot.js submit.js ./
 
 CMD ["node", "bot.js"]
