@@ -2,6 +2,11 @@ name: Deploy to VPS
 on:
   push:
     branches: [main]
+    # The Zagros history indexer runs on the explorer host, not here.
+    paths-ignore:
+      - zagros-assethub.yaml
+      - docker-compose.zagros.yml
+      - ops/zagros/**
 
 concurrency:
   group: deploy-vps

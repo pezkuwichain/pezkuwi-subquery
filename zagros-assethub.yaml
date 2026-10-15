@@ -1,0 +1,99 @@
+specVersion: 1.0.0
+name: subquery-zagros-assethub
+version: 1.0.0
+runner:
+  node:
+    name: "@subql/node"
+    version: ">=4.6.6"
+  query:
+    name: "@subql/query"
+    version: "*"
+description: Zagros Asset Hub SubQuery - history for explorer.pezkuwichain.io (same handlers as pezkuwi-assethub.yaml)
+repository: https://github.com/pezkuwichain/pezkuwi-subquery
+schema:
+  file: ./schema.graphql
+network:
+  chainId: "0x063f739077881df9f291548de301b2e11d6a45cc545c24e7bf18d8a40f0ce182"
+  endpoint:
+    - ws://127.0.0.1:9955
+dataSources:
+  - name: main
+    kind: substrate/Runtime
+    startBlock: 1
+    mapping:
+      file: ./dist/index.js
+      handlers:
+        # Block handler: initialize active pool stakers from chain state
+        - handler: handleBlock
+          kind: substrate/BlockHandler
+        # Signed extrinsics for history
+        - handler: handleHistoryElement
+          kind: substrate/CallHandler
+          filter:
+            isSigned: true
+        # Nomination Pools rewards
+        - handler: handlePoolReward
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: PaidOut
+        # Pool member bonded (track active stakers)
+        - handler: handlePoolBonded
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: Bonded
+        # Pool member unbonded (cleanup active stakers)
+        - handler: handlePoolUnbonded
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: Unbonded
+        # Pool bonded slash
+        - handler: handlePoolBondedSlash
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: PoolSlashed
+        # Pool unbonding slash
+        - handler: handlePoolUnbondingSlash
+          kind: substrate/EventHandler
+          filter:
+            module: nominationPools
+            method: UnbondingPoolSlashed
+        # Staking rewards on AH (validators + direct nominators)
+        - handler: handleAHRewarded
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Rewarded
+        # Staking slashes on AH
+        - handler: handleAHSlashed
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: Slashed
+        # Era changes on AH (staking pallet lives here) - old format
+        - handler: handleAHNewEra
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: StakingElection
+        # Era changes on AH - new format (Polkadot 2.0)
+        - handler: handleAHStakersElected
+          kind: substrate/EventHandler
+          filter:
+            module: staking
+            method: StakersElected
+        # Native transfers
+        - handler: handleTransfer
+          kind: substrate/EventHandler
+          filter:
+            module: balances
+            method: Transfer
+        # Asset transfers
+        - handler: handleAssetTransfer
+          kind: substrate/EventHandler
+          filter:
+            module: assets
+            method: Transferred
