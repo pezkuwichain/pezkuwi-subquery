@@ -174,6 +174,32 @@ services:
       # The first scan has to walk every tracked account before it can report.
       start_period: 10m
 
+  # The same bot for Zagros, the testnet that rehearses mainnet: its citizens have no
+  # trust until a noter reports their stake, so without this every Zagros governance
+  # track stalls. Same image, its own key, its own heartbeat. The bot reads its key
+  # from /run/secrets/noter_mnemonic, so the Zagros secret is mounted under that name.
+  noter-bot-zagros:
+    container_name: noter-zagros
+    build:
+      context: ./noter
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    secrets:
+      - source: noter_zagros_mnemonic
+        target: noter_mnemonic
+    environment:
+      TZ: UTC
+      RELAY_RPC: wss://zagros-rpc.pezkuwichain.io
+      ASSET_HUB_RPC: wss://zagros-asset-hub-rpc.pezkuwichain.io
+      PEOPLE_RPC: wss://zagros-people-rpc.pezkuwichain.io
+      SCAN_INTERVAL_MS: "300000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('fs');const i=parseInt(process.env.SCAN_INTERVAL_MS||'300000',10);let t=0;try{t=Number(fs.readFileSync(process.env.HEARTBEAT_FILE||'/tmp/noter-heartbeat','utf8'))}catch{};process.exit(Number.isFinite(t)&&Date.now()-t<i*3?0:1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10m
+
   payout-bot:
     container_name: payout-pezkuwi
     build:
@@ -193,6 +219,8 @@ secrets:
     file: ./secrets/noter_mnemonic.txt
   payout_mnemonic:
     file: ./secrets/payout_mnemonic.txt
+  noter_zagros_mnemonic:
+    file: ./secrets/noter_zagros_mnemonic.txt
 
 volumes:
   pgdata:
