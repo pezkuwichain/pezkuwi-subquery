@@ -23,6 +23,7 @@ import { Keyring } from '@pezkuwi/keyring';
 import { cryptoWaitReady } from '@pezkuwi/util-crypto';
 import fs from 'fs';
 import { watchSubmission, isStale } from './submit.js';
+import { needsReconfirmation, DEFAULT_CONFIRM_EVERY_BLOCKS } from './confirm.js';
 
 // ========================================
 // CONFIGURATION
@@ -33,6 +34,9 @@ const ASSET_HUB_RPC = process.env.ASSET_HUB_RPC || 'wss://asset-hub-rpc.pezkuwic
 const PEOPLE_RPC   = process.env.PEOPLE_RPC   || 'wss://people-rpc.pezkuwichain.io';
 const SCAN_INTERVAL = parseInt(process.env.SCAN_INTERVAL_MS || '300000', 10); // 5 min
 const UNITS = BigInt('1000000000000'); // 10^12
+// How old a confirmation of unchanged stake may get before it is sent again (see confirm.js).
+const CONFIRM_EVERY_BLOCKS = parseInt(
+  process.env.CONFIRM_EVERY_BLOCKS || String(DEFAULT_CONFIRM_EVERY_BLOCKS), 10);
 
 // Liveness. A scan that throws is logged and retried, which is right — a chain can
 // be briefly unreachable. What is not right is doing that forever in silence: this
@@ -173,7 +177,7 @@ async function getAssetHubStakingData(assetHubApi, address) {
     return { stakedAmount, nominationsCount, unlockingChunksCount };
   } catch (err) {
     log('ERROR', `Failed to get AH staking data for ${address}`, { error: err.message });
-    return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0 };
+    return { stakedAmount: 0n, nominationsCount: 0, unlockingChunksCount: 0, queryFailed: true };
   }
 }
 
@@ -280,6 +284,17 @@ async function getPendingData(peopleApi, address, source) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The block this source's stake was last confirmed at on People Chain. `supported` is false on
+ * a runtime that does not keep confirmations yet, and the bot then never re-confirms.
+ */
+async function getLastConfirmed(peopleApi, address, source) {
+  const query = peopleApi.query.stakingScore.lastConfirmed;
+  if (!query) return { supported: false, at: null };
+  const result = await query(address, source);
+  return { supported: true, at: result.isNone ? null : result.unwrap().toNumber() };
 }
 
 /**
@@ -426,11 +441,37 @@ async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, ad
   const ahStakingPending = await getPendingData(peopleApi, address, 'AssetHub');
   const ahStakingCached = ahStakingPending ?? await getCachedData(peopleApi, address, 'AssetHub');
 
-  if (hasDataChanged(combinedData, ahStakingCached)) {
-    // Skip update if pool query failed and we'd be downgrading a known stake to 0
-    if (poolData.queryFailed && ahStakingCached && ahStakingCached.stakedAmount > combinedData.stakedAmount) {
-      log('WARN', `Skipping update for ${address.slice(0, 8)}... — pool query failed, would downgrade stake`, {
-        cached: Number(ahStakingCached.stakedAmount / UNITS),
+  const changed = hasDataChanged(combinedData, ahStakingCached);
+  if (!changed) {
+    const confirmed = await getLastConfirmed(peopleApi, address, 'AssetHub');
+    const currentBlock = (await peopleApi.rpc.chain.getHeader()).number.toNumber();
+    if (needsReconfirmation({
+      supported: confirmed.supported,
+      changed,
+      pending: ahStakingPending !== null,
+      queryFailed: ahStakingData.queryFailed || poolData.queryFailed,
+      recordedStake: ahStakingCached ? ahStakingCached.stakedAmount : null,
+      lastConfirmedAt: confirmed.at,
+      currentBlock,
+      everyBlocks: CONFIRM_EVERY_BLOCKS,
+    })) {
+      updates.push({ address, source: 'AssetHub', data: combinedData });
+      log('INFO', `Re-confirming unchanged AH stake for ${address.slice(0, 8)}...`, {
+        lastConfirmedAt: confirmed.at,
+        currentBlock,
+      });
+    }
+  }
+
+  if (changed) {
+    // A total with a failed half in it is not a measurement. The direct-staking query used to
+    // fail silently into zeros, and a zero that lands clears the account's stake clock on
+    // chain -- a dropped RPC call cost a citizen the duration they had held. Either half
+    // failing skips the account this cycle; the next scan reads it again.
+    const failed = ahStakingData.queryFailed || poolData.queryFailed;
+    if (failed) {
+      log('WARN', `Skipping update for ${address.slice(0, 8)}... — a staking query failed, the total is partial`, {
+        cached: ahStakingCached ? Number(ahStakingCached.stakedAmount / UNITS) : null,
         wouldSubmit: Number(combinedData.stakedAmount / UNITS),
       });
     } else {
