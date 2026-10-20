@@ -22,7 +22,7 @@ import { ApiPromise, WsProvider } from '@pezkuwi/api';
 import { Keyring } from '@pezkuwi/keyring';
 import { cryptoWaitReady } from '@pezkuwi/util-crypto';
 import fs from 'fs';
-import { watchSubmission, isStale } from './submit.js';
+import { watchSubmission, isStale, failedBatchItems } from './submit.js';
 import { needsReconfirmation, DEFAULT_CONFIRM_EVERY_BLOCKS } from './confirm.js';
 
 // ========================================
@@ -45,9 +45,13 @@ const CONFIRM_EVERY_BLOCKS = parseInt(
 // trust score, so a mute noter is not a degraded service, it is a wrong answer for
 // every citizen.
 //
-// The heartbeat records the last scan that actually completed. The container
-// healthcheck reads it, and the watchdog below exits once it goes stale, so the
-// restart policy turns a silent stall into a visibly crash-looping container.
+// The heartbeat records the last time a scan made progress: a group of accounts read and,
+// if it had anything to report, reported. Not the last scan to finish -- a scan's length
+// grows with the citizens it tracks, and on 2026-10-19 the first scan after the People
+// upgrade, re-confirming all 98 Zagros accounts, ran past the window and was killed halfway
+// as if it had hung. Progress is what a stall lacks. The container healthcheck reads the
+// heartbeat, and the watchdog below exits once it goes stale, so the restart policy turns a
+// silent stall into a visibly crash-looping container.
 const HEARTBEAT_FILE = process.env.HEARTBEAT_FILE || '/tmp/noter-heartbeat';
 const STALE_AFTER = SCAN_INTERVAL * 3;
 const STARTED_AT = Date.now();
@@ -330,14 +334,14 @@ let submitQueue = Promise.resolve();
  * Routes a signAndSend through the shared serialization queue, with the standard
  * dispatch-error decoding/logging both callers below need.
  */
-function queueSubmit(peopleApi, noterKeypair, tx, description) {
-  const task = submitQueue.then(() => doSignAndSend(peopleApi, noterKeypair, tx, description));
+function queueSubmit(peopleApi, noterKeypair, tx, description, onInBlock) {
+  const task = submitQueue.then(() => doSignAndSend(peopleApi, noterKeypair, tx, description, onInBlock));
   // Never let one caller's failure poison the queue for the next caller's submission.
   submitQueue = task.catch(() => {});
   return task;
 }
 
-function doSignAndSend(peopleApi, noterKeypair, tx, description) {
+function doSignAndSend(peopleApi, noterKeypair, tx, description, onInBlock) {
   const decodeError = (dispatchError) => {
     if (dispatchError.isModule) {
       try {
@@ -347,7 +351,7 @@ function doSignAndSend(peopleApi, noterKeypair, tx, description) {
     }
     return dispatchError.toString();
   };
-  return watchSubmission(tx, noterKeypair, { decodeError, timeoutMs: SUBMIT_TIMEOUT }).then(
+  return watchSubmission(tx, noterKeypair, { decodeError, timeoutMs: SUBMIT_TIMEOUT, onInBlock }).then(
     (block) => log('INFO', `TX success: ${description}`, { block }),
     (err) => {
       log('ERROR', 'TX failed', { description, error: err.message });
@@ -376,6 +380,52 @@ function submitStakingDetails(peopleApi, noterKeypair, updates) {
   const addresses = updates.map(u => u.address.slice(0, 8) + '...').join(', ');
 
   return queueSubmit(peopleApi, noterKeypair, tx, `${updates.length} update(s) for [${addresses}]`);
+}
+
+/**
+ * Submit a scan group's updates -- several accounts' -- as one `utility.forceBatch`, and
+ * return how many of them failed.
+ *
+ * One transaction per account made a scan's length the number of accounts with something to
+ * report times a block: every re-confirmation falls due in the same scan, so on mainnet that
+ * would be every tracked citizen at once, every few days. `forceBatch` rather than `batchAll`
+ * because the accounts are unrelated: one refused report must not take the others back with
+ * it, or the same refusal would block the whole group in every scan.
+ */
+async function submitScanGroup(peopleApi, noterKeypair, updates) {
+  if (updates.length === 1) {
+    await submitStakingDetails(peopleApi, noterKeypair, updates);
+    return 0;
+  }
+  const calls = updates.map(({ address, source, data }) =>
+    peopleApi.tx.stakingScore.receiveStakingDetails(
+      address,
+      source,
+      data.stakedAmount.toString(),
+      data.nominationsCount,
+      data.unlockingChunksCount,
+    )
+  );
+  let failed = [];
+  await queueSubmit(
+    peopleApi,
+    noterKeypair,
+    peopleApi.tx.utility.forceBatch(calls),
+    `${updates.length} update(s) for ${new Set(updates.map(u => u.address)).size} account(s)`,
+    (events) => { failed = failedBatchItems(events); },
+  );
+  for (const { index, error } of failed) {
+    const { address, source } = updates[index];
+    let reason = error?.toString?.() ?? String(error);
+    if (error?.isModule) {
+      try {
+        const decoded = peopleApi.registry.findMetaError(error.asModule);
+        reason = `${decoded.section}.${decoded.name}`;
+      } catch { /* keep the raw error */ }
+    }
+    log('ERROR', `Report refused for ${address.slice(0, 8)}... (${source})`, { error: reason });
+  }
+  return failed.length;
 }
 
 /**
@@ -416,11 +466,15 @@ async function finalizeMaturedPending(peopleApi, noterKeypair) {
 // PROCESS SINGLE ACCOUNT
 // ========================================
 
-async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address) {
+/**
+ * Work out what to report for one account, and report it unless `submit` is false -- a scan
+ * collects a whole group's updates and sends them together. Returns the updates.
+ */
+async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address, { submit = true } = {}) {
   // The chain refuses a noter's report about themselves (`NoterCannotAttestSelf`), so a
   // noter that has opted in itself failed on that account in every scan. Its stake has to
   // come from another noter; compared as account ids, since the address format may differ.
-  if (peopleApi.createType('AccountId', address).eq(noterKeypair.publicKey)) return 0;
+  if (peopleApi.createType('AccountId', address).eq(noterKeypair.publicKey)) return [];
 
   const updates = [];
 
@@ -501,11 +555,11 @@ async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, ad
   }
 
   // 5. Submit all updates in a single batch
-  if (updates.length > 0) {
+  if (submit && updates.length > 0) {
     await submitStakingDetails(peopleApi, noterKeypair, updates);
   }
 
-  return updates.length;
+  return updates;
 }
 
 // ========================================
@@ -533,18 +587,38 @@ async function fullScan(relayApi, assetHubApi, peopleApi, noterKeypair) {
     const results = await Promise.allSettled(
       batch.map(([key]) => {
         const address = key.args[0].toString();
-        return processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address);
+        return processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address, { submit: false });
       })
     );
 
+    const groupUpdates = [];
+    let read = 0;
     for (const result of results) {
       if (result.status === 'fulfilled') {
-        updatedCount += result.value;
+        read++;
+        groupUpdates.push(...result.value);
       } else {
         errorCount++;
         log('ERROR', 'Account processing failed', { error: result.reason?.message });
       }
     }
+
+    // Progress means the group was read and, if it had anything to say, said it. A group that
+    // could not be read, or whose report was refused outright, is not progress: a noter that
+    // reads everything and lands nothing is as mute as one that reads nothing.
+    let reported = groupUpdates.length === 0;
+    if (groupUpdates.length > 0) {
+      try {
+        const refused = await submitScanGroup(peopleApi, noterKeypair, groupUpdates);
+        updatedCount += groupUpdates.length - refused;
+        errorCount += refused;
+        reported = refused < groupUpdates.length;
+      } catch (err) {
+        errorCount += groupUpdates.length;
+        log('ERROR', 'Group submission failed', { updates: groupUpdates.length, error: err.message });
+      }
+    }
+    if (read > 0 && reported) touchHeartbeat();
 
     // Small delay between batches to be gentle on RPC
     if (i + BATCH_SIZE < entries.length) {
@@ -617,7 +691,7 @@ async function main() {
   setInterval(() => {
     const last = lastScanAt();
     if (isStale({ lastScanAt: last, startedAt: STARTED_AT, now: Date.now(), staleAfter: STALE_AFTER })) {
-      log('ERROR', 'No scan completed within the staleness window — exiting so the restart policy takes over', {
+      log('ERROR', 'No scan progress within the staleness window — exiting so the restart policy takes over', {
         last_scan_at: Number.isFinite(last) && last >= STARTED_AT ? new Date(last).toISOString() : null,
         stale_after_ms: STALE_AFTER,
       });
@@ -668,13 +742,23 @@ async function main() {
 
   // Schedule periodic full scans
   log('INFO', `Periodic scan scheduled every ${SCAN_INTERVAL / 1000}s`);
+  // One scan at a time. A scan that outlasts the interval used to have the next one start
+  // beside it, reading the same accounts before the first one's reports landed and sending
+  // them again: 124 submissions for 98 accounts on 2026-10-19.
+  let scanning = false;
   setInterval(() => {
+    if (scanning) {
+      log('INFO', 'Previous scan still running; this interval is skipped');
+      return;
+    }
+    scanning = true;
     finalizeMaturedPending(peopleApi, noterKeypair)
       .then(() => fullScan(relayApi, assetHubApi, peopleApi, noterKeypair))
       .then(() => touchHeartbeat())
       .catch(err => {
         log('ERROR', 'Periodic scan failed', { error: err.message });
-      });
+      })
+      .finally(() => { scanning = false; });
   }, SCAN_INTERVAL);
 
 }

@@ -1,7 +1,7 @@
 // node --test noter/test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { watchSubmission, isStale } from '../submit.js';
+import { watchSubmission, isStale, failedBatchItems } from '../submit.js';
 
 // A stand-in for an api-derive submittable: it hands the status callback to the test and
 // records whether the subscription was released.
@@ -82,4 +82,48 @@ test("an earlier process's heartbeat does not keep this one alive", () => {
 test('a recent scan keeps the bot alive', () => {
   assert.equal(isStale({ lastScanAt: 5_000, startedAt: 0, now: 5_500, staleAfter: 900 }), false);
   assert.equal(isStale({ lastScanAt: 5_000, startedAt: 0, now: 5_901, staleAfter: 900 }), true);
+});
+
+test("a block's events reach onInBlock before the submission resolves", async () => {
+  const tx = fakeTx();
+  let seen = null;
+  const p = watchSubmission(tx, {}, { ...opts, onInBlock: (events) => { seen = events; } });
+  await tick();
+  tx.emit({ isInBlock: true, type: 'InBlock', asInBlock: { toHex: () => '0xabc' } }, { events: ['e'] });
+  assert.equal(await p, '0xabc');
+  assert.deepEqual(seen, ['e']);
+});
+
+test('a dispatch error does not reach onInBlock', async () => {
+  const tx = fakeTx();
+  let called = false;
+  const p = watchSubmission(tx, {}, { ...opts, onInBlock: () => { called = true; } });
+  await tick();
+  tx.emit({ isInBlock: true, type: 'InBlock', asInBlock: { toHex: () => '0xabc' } }, { dispatchError: 'E' });
+  await assert.rejects(p, /decoded E/);
+  assert.equal(called, false);
+});
+
+const ev = (section, method, data = []) => ({ event: { section, method, data } });
+
+test('a failed batch item is reported by its position among the calls', () => {
+  const events = [
+    ev('stakingScore', 'StakingDetailsReceived'),
+    ev('utility', 'ItemCompleted'),
+    ev('utility', 'ItemFailed', ['NoterCannotAttestSelf']),
+    ev('stakingScore', 'StakingDetailsReceived'),
+    ev('utility', 'ItemCompleted'),
+    ev('utility', 'ItemFailed', ['NotAuthorized']),
+    ev('utility', 'BatchCompletedWithErrors'),
+    ev('system', 'ExtrinsicSuccess'),
+  ];
+  assert.deepEqual(failedBatchItems(events), [
+    { index: 1, error: 'NoterCannotAttestSelf' },
+    { index: 3, error: 'NotAuthorized' },
+  ]);
+});
+
+test('a batch whose every item landed reports no failure', () => {
+  const events = [ev('utility', 'ItemCompleted'), ev('utility', 'ItemCompleted'), ev('utility', 'BatchCompleted')];
+  assert.deepEqual(failedBatchItems(events), []);
 });

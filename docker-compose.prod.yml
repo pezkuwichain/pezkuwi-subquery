@@ -163,9 +163,9 @@ services:
       ASSET_HUB_RPC: wss://asset-hub-rpc.pezkuwichain.io
       PEOPLE_RPC: wss://people-rpc.pezkuwichain.io
       SCAN_INTERVAL_MS: "300000"
-    # The bot writes a heartbeat when a scan completes, not when it merely stays
-    # up: an endless reconnect loop kept the container "Up" for three weeks while
-    # no staking data reached the People chain.
+    # The bot writes a heartbeat when a scan makes progress, not when it merely
+    # stays up: an endless reconnect loop kept the container "Up" for three weeks
+    # while no staking data reached the People chain.
     healthcheck:
       test: ["CMD", "node", "-e", "const fs=require('fs');const i=parseInt(process.env.SCAN_INTERVAL_MS||'300000',10);let t=0;try{t=Number(fs.readFileSync(process.env.HEARTBEAT_FILE||'/tmp/noter-heartbeat','utf8'))}catch{};process.exit(Number.isFinite(t)&&Date.now()-t<i*3?0:1)"]
       interval: 60s
