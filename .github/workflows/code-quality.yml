@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+
+# Read-only token: these jobs never write through GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: ESLint
