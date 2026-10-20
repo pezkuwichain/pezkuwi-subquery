@@ -18,8 +18,10 @@ jobs:
       - name: Find and merge master → main PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Through the environment, never interpolated into the script: a fork's
+          # branch name is attacker-chosen and would run with this job's write token.
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
           echo "Workflow ran on branch: $HEAD_BRANCH"
 
           if [ "$HEAD_BRANCH" != "master" ]; then
