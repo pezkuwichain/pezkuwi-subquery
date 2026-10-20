@@ -18,9 +18,9 @@ const TERMINAL = ['isDropped', 'isInvalid', 'isUsurped', 'isFinalityTimeout'];
  * later retracted is not lost, because the next scan finds neither a pending nor a cached
  * entry and submits again. Rejects on a dispatch error, on a terminal status, and when nothing
  * has settled after `timeoutMs`, which also covers a status subscription the node stopped
- * answering.
+ * answering. `onInBlock`, if given, sees the block's events for this extrinsic first.
  */
-export function watchSubmission(tx, signer, { decodeError, timeoutMs }) {
+export function watchSubmission(tx, signer, { decodeError, timeoutMs, onInBlock }) {
   return new Promise((resolve, reject) => {
     let unsub = null;
     let settled = false;
@@ -36,10 +36,14 @@ export function watchSubmission(tx, signer, { decodeError, timeoutMs }) {
       timeoutMs,
     );
 
-    tx.signAndSend(signer, ({ status, dispatchError }) => {
+    tx.signAndSend(signer, ({ status, dispatchError, events }) => {
       if (status.isInBlock) {
-        if (dispatchError) settle(reject, new Error(decodeError(dispatchError)));
-        else settle(resolve, status.asInBlock.toHex());
+        if (dispatchError) {
+          settle(reject, new Error(decodeError(dispatchError)));
+        } else {
+          if (!settled && onInBlock) onInBlock(events ?? []);
+          settle(resolve, status.asInBlock.toHex());
+        }
         return;
       }
       const terminal = TERMINAL.find((flag) => status[flag]);
@@ -64,4 +68,26 @@ export function watchSubmission(tx, signer, { decodeError, timeoutMs }) {
 export function isStale({ lastScanAt, startedAt, now, staleAfter }) {
   const since = Math.max(Number.isFinite(lastScanAt) ? lastScanAt : 0, startedAt);
   return now - since > staleAfter;
+}
+
+/**
+ * Which calls of a `utility.forceBatch` failed, by their position in the batch.
+ *
+ * `forceBatch` runs every call whatever the others do and reports each one, in call order, as
+ * `ItemCompleted` or `ItemFailed`. A failed item does not fail the transaction, so nothing else
+ * would ever surface it.
+ */
+export function failedBatchItems(events) {
+  const failed = [];
+  let index = 0;
+  for (const { event } of events) {
+    if (event.section !== 'utility') continue;
+    if (event.method === 'ItemCompleted') {
+      index++;
+    } else if (event.method === 'ItemFailed') {
+      failed.push({ index, error: event.data[0] });
+      index++;
+    }
+  }
+  return failed;
 }
