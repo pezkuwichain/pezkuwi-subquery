@@ -1,0 +1,82 @@
+# Zagros Asset Hub history for explorer.pezkuwichain.io.
+#
+# Runs on the explorer host next to its own archive node (systemd unit
+# zagros-ah-archive, RPC on 127.0.0.1:9955), never on the mainnet indexer host:
+# deploy-vps ignores this file and zagros-assethub.yaml.
+#
+# Everything uses the host network. Postgres binds 127.0.0.1; subql-node (3101)
+# and subql-query (3100) cannot be told to, so the host firewall (default deny,
+# only 22/80/443 open) keeps them local. Docker would bypass that firewall for
+# published ports, so nothing is published.
+# nginx exposes only POST /history/assethub (same origin as the explorer).
+#
+#   printf 'ZAGROS_DB_PASS=%s\n' "$(openssl rand -hex 24)" > .env.zagros && chmod 600 .env.zagros
+#   docker compose -f docker-compose.zagros.yml --env-file .env.zagros up -d
+#
+# The mapping in dist/ must be built first (see ops/zagros/README.md).
+name: zagros-history
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    network_mode: host
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "port=5433"]
+    volumes:
+      - zagros-pgdata:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d
+    environment:
+      POSTGRES_PASSWORD: ${ZAGROS_DB_PASS:?set ZAGROS_DB_PASS in .env.zagros}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1 -p 5433"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 1g
+    restart: unless-stopped
+
+  subquery-node-assethub:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node
+    network_mode: host
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      TZ: UTC
+      DB_USER: postgres
+      DB_PASS: ${ZAGROS_DB_PASS:?set ZAGROS_DB_PASS in .env.zagros}
+      DB_DATABASE: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5433
+    volumes:
+      - ./:/app/project:ro
+    command:
+      - -f=/app/project/zagros-assethub.yaml
+      - --db-schema=subquery-zagros-assethub
+      - --disable-historical=true
+      - --batch-size=30
+      - --port=3101
+    mem_limit: 1g
+    restart: unless-stopped
+
+  graphql-engine-assethub:
+    image: onfinality/subql-query:v1.5.0
+    network_mode: host
+    depends_on:
+      - subquery-node-assethub
+    environment:
+      DB_USER: postgres
+      DB_PASS: ${ZAGROS_DB_PASS:?set ZAGROS_DB_PASS in .env.zagros}
+      DB_DATABASE: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5433
+    command:
+      - --name=subquery-zagros-assethub
+      - --indexer=http://127.0.0.1:3101
+      - --port=3100
+      - --query-limit=100
+    mem_limit: 512m
+    restart: unless-stopped
+
+volumes:
+  zagros-pgdata:
