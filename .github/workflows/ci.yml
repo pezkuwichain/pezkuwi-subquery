@@ -85,7 +85,7 @@ jobs:
       # Run inside the image, so the modules under test are the ones the image ships.
       - name: Unit tests
         if: matrix.bot == 'noter'
-        run: docker run --rm -v "$PWD/noter/test:/app/test:ro" bot node --test test/submit.test.mjs test/confirm.test.mjs
+        run: docker run --rm -v "$PWD/noter/test:/app/test:ro" bot node --test test/submit.test.mjs test/confirm.test.mjs test/prove.test.mjs
 
       - name: The bot loads and stops at its missing mnemonic
         env:
