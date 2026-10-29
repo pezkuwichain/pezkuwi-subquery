@@ -24,6 +24,7 @@ import { cryptoWaitReady } from '@pezkuwi/util-crypto';
 import fs from 'fs';
 import { watchSubmission, isStale, failedBatchItems } from './submit.js';
 import { needsReconfirmation, DEFAULT_CONFIRM_EVERY_BLOCKS } from './confirm.js';
+import { buildStakeProof } from './prove.js';
 
 // ========================================
 // CONFIGURATION
@@ -361,21 +362,29 @@ function doSignAndSend(peopleApi, noterKeypair, tx, description, onInBlock) {
 }
 
 /**
+ * The call for one update: a stake proof when there is one, otherwise a noter's report.
+ */
+function updateCall(peopleApi, { address, source, data, proof }) {
+  if (proof) {
+    return peopleApi.tx.stakingScore.proveStake(address, proof.relayBlock, proof.relayProof, proof.hubProof);
+  }
+  return peopleApi.tx.stakingScore.receiveStakingDetails(
+    address,
+    source,
+    data.stakedAmount.toString(),
+    data.nominationsCount,
+    data.unlockingChunksCount,
+  );
+}
+
+/**
  * Submit receive_staking_details for one or more (address, source) pairs.
  * Batches multiple calls into a single utility.batchAll transaction.
  */
 function submitStakingDetails(peopleApi, noterKeypair, updates) {
   if (updates.length === 0) return Promise.resolve();
 
-  const calls = updates.map(({ address, source, data }) =>
-    peopleApi.tx.stakingScore.receiveStakingDetails(
-      address,
-      source,
-      data.stakedAmount.toString(),
-      data.nominationsCount,
-      data.unlockingChunksCount,
-    )
-  );
+  const calls = updates.map((u) => updateCall(peopleApi, u));
   const tx = calls.length === 1 ? calls[0] : peopleApi.tx.utility.batchAll(calls);
   const addresses = updates.map(u => u.address.slice(0, 8) + '...').join(', ');
 
@@ -397,15 +406,7 @@ async function submitScanGroup(peopleApi, noterKeypair, updates) {
     await submitStakingDetails(peopleApi, noterKeypair, updates);
     return 0;
   }
-  const calls = updates.map(({ address, source, data }) =>
-    peopleApi.tx.stakingScore.receiveStakingDetails(
-      address,
-      source,
-      data.stakedAmount.toString(),
-      data.nominationsCount,
-      data.unlockingChunksCount,
-    )
-  );
+  const calls = updates.map((u) => updateCall(peopleApi, u));
   let failed = [];
   await queueSubmit(
     peopleApi,
@@ -471,6 +472,9 @@ async function finalizeMaturedPending(peopleApi, noterKeypair) {
  * collects a whole group's updates and sends them together. Returns the updates.
  */
 async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address, { submit = true } = {}) {
+  if (proofMode(peopleApi)) {
+    return processAccountByProof(relayApi, assetHubApi, peopleApi, noterKeypair, address, { submit });
+  }
   // The chain refuses a noter's report about themselves (`NoterCannotAttestSelf`), so a
   // noter that has opted in itself failed on that account in every scan. Its stake has to
   // come from another noter; compared as account ids, since the address format may differ.
@@ -560,6 +564,74 @@ async function processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, ad
   }
 
   return updates;
+}
+
+/**
+ * Whether the People chain takes stake proofs (`prove_stake`). Once it does, a stake is proven
+ * from the hub's own state rather than reported, and nothing unchanged is ever re-confirmed:
+ * a change can be proven by anyone, free, so no proof means no change.
+ */
+function proofMode(peopleApi) {
+  return Boolean(peopleApi.tx.stakingScore?.proveStake);
+}
+
+/**
+ * Prove `address`'s stake when it differs from what the People chain holds, or when what it
+ * holds was never proven (a noter's figure from before proofs). Unchanged and proven: nothing.
+ */
+async function processAccountByProof(relayApi, assetHubApi, peopleApi, noterKeypair, address, { submit = true } = {}) {
+  const ahStakingData = await getAssetHubStakingData(assetHubApi, address);
+  const poolData = await getAssetHubPoolData(assetHubApi, address);
+  if (ahStakingData.queryFailed || poolData.queryFailed) {
+    log('WARN', `Skipping ${address.slice(0, 8)}... — a staking query failed`);
+    return [];
+  }
+  const combinedData = {
+    stakedAmount: ahStakingData.stakedAmount + poolData.stakedAmount,
+    nominationsCount: ahStakingData.nominationsCount,
+    unlockingChunksCount: ahStakingData.unlockingChunksCount + poolData.unlockingChunksCount,
+  };
+  const cached = await getCachedData(peopleApi, address, 'AssetHub');
+  const proven = (await peopleApi.query.stakingScore.reportedByChain(address)).isSome;
+  // The bot's own reading is only a trigger; what lands is what the proof says.
+  if (!hasDataChanged(combinedData, cached) && (proven || combinedData.stakedAmount === 0n)) return [];
+
+  const proof = await buildStakeProof({ relayApi, assetHubApi, peopleApi, address });
+  if (!proof) return [];
+  log('INFO', `Proving AH stake for ${address.slice(0, 8)}...`, {
+    stakedHEZ: Number(combinedData.stakedAmount / UNITS),
+    relayBlock: proof.relayBlock,
+  });
+  const updates = [{ address, source: 'AssetHub', proof }];
+  if (submit) await submitStakingDetails(peopleApi, noterKeypair, updates);
+  return updates;
+}
+
+/**
+ * Watch the Asset Hub for stake changes and prove the tracked accounts they touch, as they
+ * happen. The periodic scan stays behind it as a safety net.
+ */
+async function startHubListener(relayApi, assetHubApi, peopleApi, noterKeypair) {
+  if (!proofMode(peopleApi)) return;
+  log('INFO', 'Watching the Asset Hub for stake changes...');
+  await assetHubApi.rpc.chain.subscribeFinalizedHeads(async (header) => {
+    try {
+      const events = await (await assetHubApi.at(header.hash)).query.system.events();
+      const touched = new Set();
+      for (const { event } of events) {
+        if (event.section !== 'staking' && event.section !== 'nominationPools') continue;
+        for (const value of event.data) {
+          if (value?.toRawType?.() === 'AccountId32') touched.add(value.toString());
+        }
+      }
+      for (const address of touched) {
+        if ((await peopleApi.query.stakingScore.trackingOptIn(address)).isNone) continue;
+        await processAccount(relayApi, assetHubApi, peopleApi, noterKeypair, address);
+      }
+    } catch (err) {
+      log('ERROR', 'Hub event processing error', { error: err.message });
+    }
+  });
 }
 
 // ========================================
@@ -739,6 +811,7 @@ async function main() {
 
   // Start event listener for real-time processing
   await startEventListener(relayApi, assetHubApi, peopleApi, noterKeypair);
+  await startHubListener(relayApi, assetHubApi, peopleApi, noterKeypair);
 
   // Schedule periodic full scans
   log('INFO', `Periodic scan scheduled every ${SCAN_INTERVAL / 1000}s`);
