@@ -50,6 +50,7 @@
     "axios@npm:^0.27.2": "npm:^0.34.0",
     "braces@npm:^3.0.3": "npm:@pezkuwi/braces@^3.0.4",
     "deepmerge@npm:^4.2.2": "npm:@pezkuwi/deepmerge@^4.3.2",
+    "elliptic@npm:6.6.1": "npm:@pezkuwi/elliptic@^6.6.2",
     "package-json@npm:^6.3.0": "npm:^7.0.0",
     "serialize-javascript@npm:^6.0.2": "npm:^7.0.5",
     "simple-git@npm:^3.28.0": "npm:^4.0.1",
