@@ -4325,10 +4325,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"deepmerge@npm:^4.2.2":
-  version: 4.3.1
-  resolution: "deepmerge@npm:4.3.1"
-  checksum: 10c0/e53481aaf1aa2c4082b5342be6b6d8ad9dfe387bc92ce197a66dea08bd4265904a087e75e464f14d1347cf2ac8afe1e4c16b266e0561cc5df29382d3c5f80044
+"deepmerge@npm:@pezkuwi/deepmerge@^4.3.2":
+  version: 4.3.2
+  resolution: "@pezkuwi/deepmerge@npm:4.3.2"
+  checksum: 10c0/e621bd9b15b4640f7162c182d4bad9e61dbd36018a343b8643d375e66099f937c0e485d73c2df49444532e475f946af06ca9fe406844d12dffefcc1417989803
   languageName: node
   linkType: hard
 
